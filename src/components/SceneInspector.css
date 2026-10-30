@@ -1,0 +1,334 @@
+.layer-row {
+  position: relative;
+  z-index: 1;
+}
+.layer-row.dragging {
+  z-index: 30;
+  box-shadow: 0 8px 24px #0007;
+  background: #38302b;
+  opacity: 0.94;
+}
+.layer-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex-shrink: 0;
+  padding: 0 3px 0 6px;
+  color: #68615d;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 6px;
+}
+.layer-drag-handle:hover {
+  color: #e9b69d;
+  background: #ffffff06;
+}
+.layer-drag-handle:active {
+  cursor: grabbing;
+}
+.layer-row .layer-name {
+  padding-left: 3px;
+  gap: 7px;
+}
+.layer-row > .icon-button {
+  margin-right: 3px;
+}
+.layer-row .layer-name > svg {
+  width: 14px;
+  height: 14px;
+}
+.layer-row .layer-name > span {
+  font-size: 11px;
+}
+.layer-properties-section {
+  display: grid;
+  gap: 13px;
+}
+.layer-properties-section > .section-heading {
+  margin: 0;
+}
+.layer-source-controls {
+  display: grid;
+  gap: 13px;
+}
+.layer-source-controls > .ui-button {
+  width: 100%;
+  justify-content: center;
+}
+.text-layer-controls {
+  display: grid;
+  gap: 12px;
+}
+.type-control-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.type-control-row > .field-label {
+  width: 78px;
+  flex-shrink: 0;
+}
+.text-align-buttons {
+  display: flex;
+  gap: 3px;
+  padding-bottom: 2px;
+}
+.geometry-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  align-items: center;
+  margin-top: 6px;
+}
+.geometry-heading h3 {
+  font-size: 11px;
+  font-weight: 500;
+  color: #b2aaa4;
+}
+.orientation-switch {
+  display: flex;
+  padding: 2px;
+  background: #202020;
+  border: 1px solid #333;
+  border-radius: 8px;
+  gap: 2px;
+}
+.orientation-switch .ui-button {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 5px;
+}
+.portrait-format-icon {
+  display: block;
+  width: 8px;
+  height: 13px;
+  border: 1.3px solid currentColor;
+  border-radius: 2px;
+}
+.layer-geometry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.percent-number {
+  position: relative;
+}
+.percent-number .ui-input {
+  padding-right: 23px !important;
+  font-variant-numeric: tabular-nums;
+}
+.percent-number > span {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: #737373;
+  pointer-events: none;
+}
+.layer-alignment {
+  display: flex;
+  gap: 3px;
+  justify-content: space-between;
+}
+.layer-alignment .ui-button {
+  flex: 1;
+  min-width: 0;
+  padding: 5px;
+  font-size: 10px;
+}
+.reset-layer-frame {
+  justify-self: start;
+  font-size: 10px;
+  padding: 0;
+  min-height: 24px;
+}
+.kit-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: #b8b0aa;
+  margin-top: 15px;
+}
+.kit-setting-row label {
+  cursor: pointer;
+}
+.outline-thickness {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+.outline-thickness > .field-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.outline-thickness .ui-input {
+  max-width: 60px;
+}
+.timer-status {
+  font-size: 9px;
+  color: #96908a;
+}
+.scene-audio-hint {
+  display: block;
+  font-size: 9px;
+  color: #777;
+  margin-top: 5px;
+}
+.scene-inspector .camera-shapes .ui-button {
+  padding: 0;
+}
+.scene-inspector .inline-gain .ui-slider {
+  height: 18px;
+}
+.scene-inspector .inline-gain > div > span .ui-input {
+  width: 43px !important;
+}
+.scene-inspector .countdown-controls .ui-button {
+  font-size: 11px;
+}
+.scene-inspector .countdown-controls .ui-button-icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.scene-inspector .ui-input {
+  border-color: #3b3b3b;
+}
+.scene-inspector .ui-textarea {
+  min-height: 70px;
+}
+.scene-inspector .color-palette {
+  margin-top: 2px;
+}
+.scene-inspector .countdown-section {
+  gap: 15px;
+}
+.scene-inspector .background-section > .ui-button-link {
+  font-size: 10px;
+  padding-left: 0;
+}
+.scene-inspector .layer-properties-section .gs-select-trigger {
+  min-height: 35px;
+  padding: 8px 9px;
+  font-size: 11px;
+}
+.scene-inspector .kit-setting-row .ui-switch {
+  height: 20px;
+  min-height: 20px;
+}
+.scene-inspector .microphone-section .ui-slider-thumb {
+  width: 12px;
+  height: 12px;
+}
+.scene-inspector .camera-style-section .color-palette {
+  margin-top: 17px;
+}
+@media (max-width: 999px) {
+  .scene-inspector .layer-properties-section {
+    grid-column: 2;
+    grid-row: auto !important;
+  }
+  .scene-inspector .layers-section {
+    align-self: start;
+  }
+  .scene-inspector .camera-style-section,
+  .scene-inspector .zoom-section,
+  .scene-inspector .countdown-section {
+    grid-column: 2;
+    grid-row: auto !important;
+  }
+  .scene-inspector .background-section {
+    grid-column: 1;
+  }
+  .scene-inspector .layer-name > span {
+    font-size: 10px;
+  }
+  .layer-alignment .ui-button {
+    font-size: 9px;
+  }
+  .layer-geometry-grid {
+    gap: 7px;
+  }
+}
+
+.scene-inspector[data-locked]{opacity:.55;cursor:progress}
+
+.layer-row .layer-drag-handle {
+  width: 20px;
+  height: auto;
+  min-height: 30px;
+  padding: 0 3px 0 6px;
+}
+.layer-row .layer-name {
+  min-height: 35px;
+  min-width: 0;
+  flex-shrink: 1;
+  justify-content: flex-start;
+  font-weight: 400;
+}
+.color-palette > .ui-toggle-group-item {
+  min-height: 20px;
+  padding: 0;
+  gap: 0;
+}
+.color-palette > .ui-toggle-group-item:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 3px;
+}
+.custom-color:focus-within {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 3px;
+}
+.layer-source-menu {
+  width: 235px;
+}
+.layer-source-menu .ui-menu-item {
+  font-size: 11px;
+}
+.layer-source-menu .ui-menu-item > span {
+  flex: 1;
+}
+.countdown-duration-field {
+  display: grid;
+  gap: 8px;
+}
+.countdown-duration-field .gs-select-trigger {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.custom-duration-field {
+  margin-top: 4px;
+}
+.custom-duration-input {
+  position: relative;
+}
+.custom-duration-input .ui-input {
+  padding-right: 38px !important;
+  font-variant-numeric: tabular-nums;
+}
+.custom-duration-input > span {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  transform: translateY(-50%);
+  color: var(--ui-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.custom-duration-input input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.custom-duration-input input::-webkit-inner-spin-button,
+.custom-duration-input input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

@@ -1,0 +1,46 @@
+/* The custom recovery and session-status screens share the account palette.
+   Keep these overrides inside the public/auth shell, away from studio controls. */
+.auth-shell {
+  --ui-primary-foreground: #1a100b;
+  color-scheme: dark;
+}
+
+.auth-shell .ui-input {
+  color: #f5f3ef;
+  background: #151515;
+  border-color: #757575;
+  min-height: 48px;
+  font-size: 16px;
+  padding: 11px 14px;
+}
+
+.auth-shell .ui-input::placeholder {
+  color: #c4c1ba;
+  opacity: 1;
+}
+
+.auth-shell .ui-input:focus-visible,
+.auth-shell .ui-button:focus-visible {
+  outline-color: #ff865e;
+}
+
+/* Account portals render outside the public page shell. */
+.cl-rootBox,
+.cl-userButtonPopoverRootBox {
+  color-scheme: dark;
+}
+
+/* Preferences use application controls rather than Clerk components. */
+.settings-section > p,
+.settings-section .hint,
+.settings-section .field-label {
+  color: #c4c1ba;
+}
+
+.settings-section .gs-select-trigger {
+  border-color: #757575;
+}
+
+.settings-section .gs-select-trigger:hover:not([data-disabled]) {
+  border-color: #ff865e;
+}

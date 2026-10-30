@@ -1,0 +1,20 @@
+{
+  "name": "grava-simples-aac-export",
+  "ffmpegVersion": "5.1.4",
+  "ffmpegCommit": "4729204c17f756e186d622060088371d10b34f7e",
+  "ffmpegWasmCommit": "c3a763857c5e615ae8674715ad5e4f63ff469e9d",
+  "license": "LGPL-2.1-or-later",
+  "emscriptenVersion": "4.0.18",
+  "codecs": {
+    "copy": "h264",
+    "decode": [
+      "aac",
+      "opus"
+    ],
+    "encode": [
+      "aac"
+    ]
+  },
+  "source": "/source/ffmpeg-export-source.tar.gz",
+  "wasmSha256": "a71e4721a8b00813f5a866bd13cb5c088db7906564f2fd2887600b7d2c9fe5ac"
+}

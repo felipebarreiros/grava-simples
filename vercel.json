@@ -1,0 +1,68 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/transcription-cleanup",
+      "schedule": "0 3 * * *"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp"
+      },
+      "continue": true
+    },
+    {
+      "src": "/api(?:/.*)?",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "continue": true
+    },
+    {
+      "src": "/(?:index\\.html|app(?:/.*)?|login(?:/.*)?|signup(?:/.*)?|password-recovery(?:/.*)?|logout)?",
+      "headers": {
+        "Cache-Control": "no-cache"
+      },
+      "continue": true
+    },
+    {
+      "src": "/source/(.*\\.tar\\.gz)",
+      "headers": {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": "attachment"
+      },
+      "continue": true
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/api(?:/.*)?",
+      "status": 404
+    },
+    {
+      "src": "/(?:app|login|signup|password-recovery)(?:/.*)?",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/logout",
+      "dest": "/index.html"
+    },
+    {
+      "src": "/.*",
+      "status": 404
+    }
+  ]
+}

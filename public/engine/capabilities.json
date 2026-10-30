@@ -1,0 +1,29 @@
+{
+  "backend": "obs-wasm-subset",
+  "label": "OBS WASM subset",
+  "obsVersion": "33.0.1",
+  "obsCommit": "65c320b46e1af5c7a555161aea6182cdf7a8c524",
+  "compiler": "Emscripten 4.0.18",
+  "libobsRuntime": false,
+  "sceneGeometry": "Upstream OBS matrix4.c, vec3.c, vec4.c; called for every output frame",
+  "audioProcessing": "Upstream OBS compressor envelope and compression DSP in AudioWorklet; ratio 4:1, threshold -18 dB, attack 6 ms, release 100 ms, output gain 0 dB",
+  "browserReplacements": [
+    "MediaDevices capture",
+    "Canvas 2D compositing",
+    "MediaRecorder encoding and muxing",
+    "Web Audio stream routing"
+  ],
+  "notPorted": [
+    "libobs scene/source lifecycle",
+    "OBS graphics backend and effect compiler",
+    "native capture plugins",
+    "OBS encoders and muxers",
+    "OBS audio mixer",
+    "sidechain",
+    "OBS properties/data API"
+  ],
+  "license": "GPL-2.0-or-later; SIMDe MIT",
+  "sourceArchive": "/source/obs-wasm-source.tar.gz",
+  "licenseUrl": "/source/OBS-COPYING.txt",
+  "wasmSha256": "ebf845ca124701400ef30973fe6cc4410c4ec89cc3b1d4382fdc24655a91c21d"
+}
