@@ -1,0 +1,12 @@
+{
+  "application": "grava-simples-experiment",
+  "applicationVersion": "0.4.0",
+  "obsVersion": "33.0.1",
+  "obsCommit": "65c320b46e1af5c7a555161aea6182cdf7a8c524",
+  "license": "GPL-2.0-or-later",
+  "engine": "obs-wasm-subset",
+  "fullLibobsRuntime": false,
+  "wasmSha256": "ebf845ca124701400ef30973fe6cc4410c4ec89cc3b1d4382fdc24655a91c21d",
+  "sourceArchive": "/source/grava-simples-source.tar.gz",
+  "notices": "/source/THIRD-PARTY-NOTICES.txt"
+}

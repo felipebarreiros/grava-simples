@@ -1,0 +1,8 @@
+.ui-toggle-group-item[data-state="on"] {
+  background: #373737;
+  color: var(--ui-foreground);
+}
+.ui-toggle-group-item:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 3px;
+}

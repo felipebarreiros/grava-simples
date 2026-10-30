@@ -1,0 +1,58 @@
+.source-library {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.source-library h3 {
+  font-size: 13px;
+  font-weight: 550;
+}
+.source-library > p {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.source-library-list {
+  display: grid;
+  gap: 5px;
+  max-height: 235px;
+  overflow-y: auto;
+}
+.source-library-item.ui-button {
+  display: flex;
+  justify-content: flex-start;
+  gap: 13px;
+  min-height: 61px;
+  padding: 12px;
+  text-align: left;
+  background: #242424;
+  border-radius: 10px;
+}
+.source-library-item > svg:first-child {
+  color: #d1b5a6;
+}
+.source-library-item > span {
+  flex: 1;
+  min-width: 0;
+}
+.source-library-item strong,
+.source-library-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-library-item strong {
+  font-weight: 500;
+  font-size: 13px;
+}
+.source-library-item small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.source-library-item > svg:last-child {
+  color: #96938d;
+}
