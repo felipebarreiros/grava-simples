@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { UserButton, useAuth } from "@clerk/react";
 import { reportApplicationError, trackCreatorEvent, trackPage } from './analytics/client';
+import { CreatorFeedback } from './analytics/CreatorFeedback';
+import { elapsedRecordingOperation, recordingFailureCode, recordingFileProperties, recordingSettings, recordingSummary } from './analytics/recordingMetrics';
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -204,6 +206,14 @@ export default function App() {
   );
   const [tab, setTab] = useState<"studio" | "recordings">("studio");
   useEffect(() => { trackPage(page === 'studio' && tab === 'recordings' ? 'recordings' : page); }, [page, tab]);
+  const lastStudioView = useRef('');
+  useEffect(() => {
+    if (page !== 'studio' || tab !== 'studio') { lastStudioView.current = ''; return; }
+    const view = project.id || 'initial-studio';
+    if (lastStudioView.current === view) return;
+    lastStudioView.current = view;
+    trackCreatorEvent('studio_opened');
+  }, [page, tab, project.id]);
   const currentPage = useRef(page);
   currentPage.current = page;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -280,6 +290,7 @@ export default function App() {
   const currentProject = useRef(project);
   const recordingProject = useRef(project?.id);
   const lastResult = useRef("");
+  const recordingTelemetry = useRef({ phase: 'idle' as 'idle' | 'starting' | 'recording' | 'stopping', failed: false });
   const restoredUrls = useRef<string[]>([]);
   const exportUrls = useRef<string[]>([]);
   const exporting = Object.values(downloadState).some((item) => item.busy);
@@ -402,6 +413,11 @@ export default function App() {
       engine: wrapped,
       onEvent(event) {
         setSnapshot(event);
+        const activity = recordingTelemetry.current;
+        if (event.error && (activity.phase === 'recording' || activity.phase === 'stopping') && !activity.failed) {
+          activity.failed = true;
+          trackCreatorEvent('recording_failed', { ...recordingSummary(event), stage: activity.phase === 'stopping' ? 'finalize' : 'recording', error_code: 'unknown' }, userId ?? undefined);
+        }
         const activeId = currentProject.current.id;
         if (
           activeId &&
@@ -430,15 +446,21 @@ export default function App() {
         }
         if (event.result && event.result.id !== lastResult.current) {
           lastResult.current = event.result.id;
+          const summary = recordingSummary(event);
+          const outcome = event.state === 'complete' ? 'complete' : 'recovered';
+          if (outcome === 'complete') trackCreatorEvent('recording_completed', summary, userId ?? undefined);
+          recordingTelemetry.current.phase = 'idle';
           setResult(event.result);
           setResultOpen(true);
+          const savingStarted = performance.now();
           void saveProjectTake(recordingProject.current, event.result)
-            .then(() => { refresh(); trackCreatorEvent('recording_saved'); })
-            .catch((failure) =>
+            .then(() => { refresh(); trackCreatorEvent('recording_saved', { ...summary, outcome, duration_ms: elapsedRecordingOperation(savingStarted) }, userId ?? undefined); })
+            .catch((failure) => {
+              trackCreatorEvent('recording_save_failed', { ...summary, duration_ms: elapsedRecordingOperation(savingStarted), error_code: recordingFailureCode(failure) }, userId ?? undefined);
               setError(
                 `O vídeo foi gravado, mas não entrou no projeto: ${message(failure)}`,
-              ),
-            );
+              );
+            });
         }
       },
     });
@@ -968,12 +990,15 @@ export default function App() {
       setWorking(false);
     }
   }
-  async function prepare(next = config): Promise<boolean> {
+  async function prepare(next = config, recordIntent = false): Promise<boolean> {
     if (!session.current || busy || preparationLock.current) return false;
     const studio = session.current;
     preparationLock.current = true;
     setWorking(true);
     setError("");
+    const captureStarted = performance.now();
+    const captureProperties = { ...recordingSettings(next), stage: recordIntent ? 'record_intent' : 'prepare' };
+    if (!recordIntent) trackCreatorEvent('capture_requested', captureProperties);
     try {
       await studio.prepare(next);
       if (studio !== session.current) return false;
@@ -982,8 +1007,10 @@ export default function App() {
       const available = await studio.getAvailableDevices();
       if (studio !== session.current) return false;
       setDevices(available);
+      trackCreatorEvent('capture_ready', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted) }, userId ?? undefined);
       return true;
     } catch (failure) {
+      trackCreatorEvent('capture_failed', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted), error_code: recordingFailureCode(failure) }, userId ?? undefined);
       if (studio === session.current) setError(message(failure));
       return false;
     } finally {
@@ -998,10 +1025,15 @@ export default function App() {
     setWorking(true);
     setError("");
     recordingProject.current = project.id;
+    recordingTelemetry.current = { phase: 'starting', failed: false };
+    const starting = performance.now();
     try {
       await session.current.start();
-      trackCreatorEvent('recording_started');
+      recordingTelemetry.current.phase = 'recording';
+      trackCreatorEvent('recording_started', { ...recordingSettings(config), duration_ms: elapsedRecordingOperation(starting) }, userId ?? undefined);
     } catch (failure) {
+      if (!recordingTelemetry.current.failed) trackCreatorEvent('recording_failed', { ...recordingSettings(config), stage: 'start', duration_ms: elapsedRecordingOperation(starting), error_code: recordingFailureCode(failure) }, userId ?? undefined);
+      recordingTelemetry.current = { phase: 'idle', failed: true };
       reportApplicationError(failure, 'recording');
       setError(message(failure));
     } finally {
@@ -1009,9 +1041,12 @@ export default function App() {
     }
   }
   async function stop() {
+    if (recordingTelemetry.current.phase === 'recording') recordingTelemetry.current.phase = 'stopping';
     try {
       return await session.current!.stop();
     } catch (failure) {
+      if (!recordingTelemetry.current.failed) trackCreatorEvent('recording_failed', { ...recordingSettings(config), stage: 'finalize', error_code: recordingFailureCode(failure) }, userId ?? undefined);
+      recordingTelemetry.current = { phase: 'idle', failed: true };
       setError(message(failure));
       throw failure;
     }
@@ -1022,6 +1057,9 @@ export default function App() {
       await stop().catch(() => {});
       return;
     }
+    if (!session.current || busy || exporting || !project.id) return;
+    const captureStarted = performance.now();
+    trackCreatorEvent('capture_requested', { ...recordingSettings(config), stage: 'record_intent' });
     const missing = appearance.layers.find(layer => {
       if (!layer.visible || (layer.kind !== "screen" && layer.kind !== "camera")) return false;
       // Preparation can acquire the primary camera; additional sources need an explicit connection.
@@ -1043,9 +1081,11 @@ export default function App() {
         !(await prepare({
           ...config,
           source: diagnostic ? testSource : "camera",
-        }))
+        }, true))
       )
         return;
+    } else {
+      trackCreatorEvent('capture_ready', { ...recordingSettings(config), stage: 'record_intent', duration_ms: elapsedRecordingOperation(captureStarted) });
     }
     await start();
   }
@@ -1105,6 +1145,9 @@ export default function App() {
     if (!studio || busy) return;
     const ownerId = currentProject.current.id, sceneId = scene.id;
     const alreadyConnected = studio.hasLayerSource(source.id);
+    const captureStarted = performance.now();
+    const captureProperties = { ...recordingSettings({ ...config, source: source.kind === 'camera' || source.kind === 'screen' ? source.kind : 'media' }), stage: 'source_connection' };
+    if (!alreadyConnected) trackCreatorEvent('capture_requested', captureProperties);
     setWorking(true);
     setError("");
     try {
@@ -1128,9 +1171,11 @@ export default function App() {
         return;
       }
       if (source.kind === "camera") setDevices(await studio.getAvailableDevices());
+      if (!alreadyConnected) trackCreatorEvent('capture_ready', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted) }, userId ?? undefined);
       setSourcePicker(null);
       setSourceLayerId(null);
     } catch (failure) {
+      if (!alreadyConnected) trackCreatorEvent('capture_failed', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted), error_code: recordingFailureCode(failure) }, userId ?? undefined);
       if (studio === session.current) setError(message(failure));
       return;
     } finally {
@@ -1175,15 +1220,20 @@ export default function App() {
     if (!session.current || busy) return;
     setWorking(true);
     setError("");
+    const captureStarted = performance.now();
+    const captureProperties = { ...recordingSettings({ ...config, microphone: true }), stage: 'microphone_connection' };
+    if (preview) trackCreatorEvent('capture_requested', captureProperties);
     try {
-      if (preview)
+      if (preview) {
         await session.current.replaceMicrophone(appearance.microphoneDeviceId);
-      else {
+        trackCreatorEvent('capture_ready', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted) }, userId ?? undefined);
+      } else {
         setWorking(false);
         if (!(await prepare({ ...config, microphone: true }))) return;
       }
       setSourcePicker(null);
     } catch (failure) {
+      if (preview) trackCreatorEvent('capture_failed', { ...captureProperties, duration_ms: elapsedRecordingOperation(captureStarted), error_code: recordingFailureCode(failure) }, userId ?? undefined);
       setError(message(failure));
     } finally {
       setWorking(false);
@@ -1784,6 +1834,9 @@ export default function App() {
   async function compatible(file: RecordingFile) {
     const key = `${result!.id}-${file.orientation}`;
     if (downloadState[key]?.busy) return;
+    const exportStarted = performance.now();
+    const exportProperties = recordingFileProperties(file);
+    trackCreatorEvent('export_started', exportProperties);
     setDownloadState((current) => ({
       ...current,
       [key]: { busy: true, label: "Preparando…" },
@@ -1808,14 +1861,17 @@ export default function App() {
         ...current,
         [key]: { file: converted },
       }));
+      trackCreatorEvent('export_prepared', { ...recordingFileProperties(converted), duration_ms: elapsedRecordingOperation(exportStarted) }, userId ?? undefined);
       const anchor = document.createElement("a");
       anchor.href = converted.url;
       anchor.download = converted.fileName;
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
-      trackCreatorEvent('video_downloaded', { orientation: file.orientation });
+      trackCreatorEvent('download_requested', { ...recordingFileProperties(converted), download_kind: 'compatible' }, userId ?? undefined);
+      trackCreatorEvent('video_downloaded', { orientation: file.orientation }, userId ?? undefined);
     } catch (failure) {
+      trackCreatorEvent('export_failed', { ...exportProperties, duration_ms: elapsedRecordingOperation(exportStarted), error_code: recordingFailureCode(failure) }, userId ?? undefined);
       setDownloadState((current) => ({
         ...current,
         [key]: { error: message(failure) },
@@ -3139,6 +3195,7 @@ export default function App() {
                         className="button primary"
                         href={download.file.url}
                         download={download.file.fileName}
+                        onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(download.file!), download_kind: 'compatible' })}
                         data-testid={`download-compatible-${orientation}`}
                       >
                         <Download size={16} />
@@ -3165,6 +3222,7 @@ export default function App() {
                         className="button secondary"
                         href={file.url}
                         download={file.fileName}
+                        onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(file), download_kind: 'original' })}
                         data-testid={`download-${orientation}`}
                       >
                         <Download size={16} />
@@ -3195,6 +3253,7 @@ export default function App() {
           </section>
         </Modal>
       )}
+      <CreatorFeedback available={!busy && !exporting && !working && !resultOpen && !settingsOpen && !technicalOpen && !sourcePicker && !projectEditor && !sceneEditor && !takeEditor && !deleteTarget && !searchOpen && page === 'studio'} userId={userId ?? null} />
     </div>
   );
 }

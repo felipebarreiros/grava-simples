@@ -1,0 +1,4 @@
+.creator-feedback form { display: grid; gap: 12px; }
+.creator-feedback-label { font-size: 13px; color: var(--text-secondary, #a4abb8); }
+.creator-feedback-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.creator-feedback textarea { resize: vertical; min-height: 112px; }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/react";
 import { reportApplicationError, trackCreatorEvent } from '../analytics/client';
+import { recordingFileProperties } from '../analytics/recordingMetrics';
 import {
   ArrowLeft,
   ArrowDownToLine,
@@ -592,6 +593,7 @@ export function RecordingDetail({
                 <a
                   href={result.landscape.url}
                   download={result.landscape.fileName}
+                  onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(result.landscape), download_kind: 'original' })}
                 >
                   Original horizontal
                 </a>
@@ -600,6 +602,7 @@ export function RecordingDetail({
                 <a
                   href={result.portrait.url}
                   download={result.portrait.fileName}
+                  onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(result.portrait), download_kind: 'original' })}
                 >
                   Original vertical
                 </a>

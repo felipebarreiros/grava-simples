@@ -1,11 +1,12 @@
 import type { PostHog } from 'posthog-js';
 import { analyticsPage, analyticsUrl, sanitizeAnalytics } from './privacy';
+import { creatorProperties, type CreatorEvent, type EventProperties } from './eventProperties';
+import { markRecordingFeedbackEligible } from './feedbackState';
 
-type CreatorEvent = 'project_created' | 'recording_started' | 'recording_saved' | 'recording_opened' | 'video_downloaded' | 'transcription_requested' | 'transcript_downloaded' | 'transcript_corrected';
-type EventProperties = { orientation?: string; format?: string };
 let loading: Promise<PostHog | null> | undefined;
 let lastUser: string | null | undefined;
 let lastPage = '';
+const authenticatedSessions = new Set<string>();
 
 export function initializeAnalytics(): Promise<PostHog | null> {
   if (loading) return loading;
@@ -93,10 +94,28 @@ export function trackPage(visiblePage?: 'studio' | 'projects' | 'recording' | 'r
   }));
 }
 
-export function trackCreatorEvent(event: CreatorEvent, properties: EventProperties = {}) {
+export function trackCreatorEvent(event: CreatorEvent, properties: EventProperties = {}, expectedUserId?: string) {
   void initializeAnalytics().then(client => {
-    client?.capture(event, properties);
-    client?.logger.info(event, properties);
+    if (!client || client.has_opted_out_capturing()) return;
+    if (expectedUserId && client.get_distinct_id() !== expectedUserId) return;
+    const safe = creatorProperties(properties);
+    client.capture(event, safe);
+    if (event.endsWith('_failed')) client.logger.error(event, safe);
+    else client.logger.info(event, safe);
+    if (event === 'recording_saved' && safe.outcome === 'complete' && lastUser)
+      markRecordingFeedbackEligible(import.meta.env.VITE_POSTHOG_CREATOR_SURVEY_ID ?? '', lastUser);
+  });
+}
+
+export function trackAuthenticatedSession(sessionId: string | null | undefined) {
+  if (!sessionId || authenticatedSessions.has(sessionId)) return;
+  const key = `grava-analytics-authenticated:${sessionId}`;
+  try { if (sessionStorage.getItem(key)) { authenticatedSessions.add(sessionId); return; } } catch { /* Session-only fallback below. */ }
+  void initializeAnalytics().then(client => {
+    if (!client || client.has_opted_out_capturing() || authenticatedSessions.has(sessionId)) return;
+    if (!client.capture('account_authenticated')) return;
+    authenticatedSessions.add(sessionId);
+    try { sessionStorage.setItem(key, '1'); } catch { /* In-memory deduplication remains active. */ }
   });
 }
 
