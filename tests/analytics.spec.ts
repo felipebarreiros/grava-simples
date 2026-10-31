@@ -135,6 +135,30 @@ test('real SDK identifies returning accounts and resets identity on logout and a
   expect((await clientState(page))?.id).not.toBe(anonymous?.id);
 });
 
+test('signup entry and an authenticated Clerk session are captured without counting reloads as signups', async ({ page }) => {
+  const captured = await intercept(page);
+  await page.goto('/signup');
+  await expect(page.getByTestId('clerk-sign-up')).toBeVisible();
+  await expect.poll(() => clientState(page)).not.toBeNull();
+  await page.evaluate(() => {
+    (window as any).__clerkFixture = { ...(window as any).__clerkFixture, state: 'signed-in' };
+    sessionStorage.setItem('grava-clerk-test-state', JSON.stringify((window as any).__clerkFixture));
+    window.dispatchEvent(new Event('clerk-fixture-change'));
+  });
+  await expect(page).toHaveURL(/\/app/);
+  await expect.poll(async () => (await clientState(page))?.id).toBe('user_fixture');
+  await page.evaluate(async () => { await (await (await import('/src/analytics/client.ts')).initializeAnalytics())?.shutdown(); });
+  await expect.poll(() => events(captured).filter(event => event.event === 'account_authenticated').length).toBe(1);
+  expect(events(captured).filter(event => event.event === 'signup_viewed')).toHaveLength(1);
+  expect(events(captured).find(event => event.event === 'account_authenticated').properties.distinct_id).toBe('user_fixture');
+  await page.reload();
+  await expect.poll(async () => (await clientState(page))?.id).toBe('user_fixture');
+  await page.evaluate(async () => { await (await (await import('/src/analytics/client.ts')).initializeAnalytics())?.shutdown(); });
+  expect(events(captured).filter(event => event.event === 'account_authenticated')).toHaveLength(1);
+  expect(events(captured).filter(event => event.event === 'signup_viewed')).toHaveLength(1);
+  expect(events(captured).some(event => event.event === 'signed_up')).toBe(false);
+});
+
 test('replays mask content while structured logs and same-origin tracing retain correlation', async ({ page }) => {
   const captured = await intercept(page);
   let traceHeaders: Record<string, string> = {};

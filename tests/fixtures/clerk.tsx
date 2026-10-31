@@ -42,6 +42,7 @@ export function useAuth() {
     isLoaded: state !== 'loading' && state !== 'failed',
     isSignedIn: state === 'signed-in' || state === 'signout-error',
     userId: state === 'signed-in' || state === 'signout-error' ? 'user_fixture' : null,
+    sessionId: state === 'signed-in' || state === 'signout-error' ? 'sess_fixture' : null,
     getToken: async () => state === 'signed-in' || state === 'signout-error' ? 'fixture-session-token' : null,
   };
 }
