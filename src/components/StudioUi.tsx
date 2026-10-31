@@ -128,7 +128,7 @@ export function SceneThumbnail({
       </div>
       {layout === "camera-zoom" && (
         <span className="thumb-zoom">
-          <ZoomIn size={11} /> 1.6×
+          <ZoomIn size={11} /> 1.4×
         </span>
       )}
     </div>

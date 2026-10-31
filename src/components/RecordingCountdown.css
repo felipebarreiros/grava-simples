@@ -1,0 +1,6 @@
+.recording-countdown { max-width: 320px; text-align: center; }
+.recording-countdown .modal-header { align-items: center; }
+.recording-countdown .modal-header h2 { font-size: 16px; }
+.recording-countdown .modal-content { display: grid; justify-items: stretch; gap: 24px; padding-top: 6px; }
+.recording-countdown-number { font-size: 88px; line-height: 1.2; font-weight: 550; font-variant-numeric: tabular-nums; color: var(--text, #f5f3ef); }
+.recording-countdown-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -428,7 +428,7 @@ test("project creation, scene zoom, rename, search and reload remain isolated pe
   await page.getByTestId("scene-camera-zoom").click();
   await expect(page.getByTestId("camera-zoom")).toHaveAttribute(
     "aria-valuenow",
-    "1.6",
+    "1.4",
   );
   await page.getByTestId(`project-nav-${second.id}`).click();
   await expect(page.getByTestId("camera-zoom")).toHaveAttribute(

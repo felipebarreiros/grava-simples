@@ -113,13 +113,9 @@ test("authenticated cloud job uploads once, survives navigation, seeks actual wo
   });
   await openRecordingLibrary(page, saved.projectId);
   await openRecordingDetail(page);
-  await page
-    .getByRole("button", { name: "Gerar transcrição", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toContainText("AssemblyAI");
-  await page
-    .getByRole("button", { name: "Enviar e transcrever", exact: true })
-    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("transcript-file-input")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Importar transcrição/ })).toHaveCount(0);
   await expect(
     page.getByText("Transcrevendo sua gravação…", { exact: true }),
   ).toBeVisible();
@@ -168,37 +164,7 @@ test("authenticated cloud job uploads once, survives navigation, seeks actual wo
   await expect(
     page.getByRole("button", { name: "Ir para palavra: Vamos" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Opções da transcrição" }).click();
-  await page
-    .getByRole("menuitem", {
-      name: "Gerar transcrição automática",
-      exact: true,
-    })
-    .click();
-  await page
-    .getByRole("button", { name: "Enviar e transcrever", exact: true })
-    .click();
-  await expect(
-    page.getByText("Transcrevendo sua gravação…", { exact: true }),
-  ).toBeVisible();
-  await page.reload({ waitUntil: "networkidle" });
-  cloudResult = {
-    ...automatic,
-    cues: [
-      { ...automatic.cues[0], text: "Olá, novamente." },
-      automatic.cues[1],
-    ],
-    words: [
-      { ...automatic.words[0] },
-      { ...automatic.words[1], text: "novamente." },
-      ...automatic.words.slice(2),
-    ],
-  };
-  stage = "completed";
-  await expect(
-    page.getByRole("button", { name: "Ir para palavra: novamente." }),
-  ).toBeVisible();
-  expect(submissions).toHaveLength(2);
+  expect(submissions).toHaveLength(1);
   await page.getByRole("button", { name: "Opções da transcrição" }).click();
   await page
     .getByRole("menuitem", { name: "Remover transcrição", exact: true })
@@ -208,7 +174,7 @@ test("authenticated cloud job uploads once, survives navigation, seeks actual wo
     .getByRole("button", { name: "Remover transcrição", exact: true })
     .click();
   await expect(page.getByTestId("transcript-cue")).toHaveCount(0);
-  expect(deletions).toBe(2);
+  expect(deletions).toBe(1);
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByTestId("transcript-cue")).toHaveCount(0);
 });
@@ -236,12 +202,6 @@ test("cancelled upload cleans the cloud grant and a rate limit cannot produce an
   });
   await openRecordingLibrary(page, saved.projectId);
   await openRecordingDetail(page);
-  await page
-    .getByRole("button", { name: "Gerar transcrição", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Enviar e transcrever", exact: true })
-    .click();
   await expect(
     page.getByText("Enviando gravação · 50%", { exact: true }),
   ).toBeVisible();
@@ -250,6 +210,10 @@ test("cancelled upload cleans the cloud grant and a rate limit cannot produce an
     .click();
   await expect.poll(() => deletions).toBeGreaterThanOrEqual(1);
   await expect(page.getByTestId("transcript-cue")).toHaveCount(0);
+  await expect(page.getByTestId("transcription-status")).toContainText("Transcrição cancelada.");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("transcription-status")).toContainText("Transcrição cancelada.");
+  expect(uploads).toBe(1);
   limited = true;
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByText(/Limite de transcrições atingido/)).toBeVisible();
@@ -276,12 +240,10 @@ test("recordings above two hours expose the limit before an upload starts", asyn
   );
   await openRecordingLibrary(page, saved.projectId);
   await openRecordingDetail(page);
-  await expect(
-    page.getByRole("button", { name: "Gerar transcrição", exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Tentar novamente", exact: true })).toHaveCount(0);
   await expect(
     page.getByText(
-      /A transcrição automática aceita gravações de até duas horas/,
+      /excede o limite de duas horas para transcrição/,
     ),
   ).toBeVisible();
 });
@@ -340,9 +302,8 @@ test("cancellation invalidates a late completed poll instead of restoring delete
   await page.getByRole("button", { name: "Cancelar transcrição" }).click();
   await expect.poll(() => cancelled).toBe(true);
   releasePoll();
-  await expect(
-    page.getByRole("button", { name: "Gerar transcrição", exact: true }),
-  ).toBeEnabled();
+  await expect(page.getByTestId("transcription-status")).toContainText("Transcrição cancelada.");
+  await expect(page.getByRole("button", { name: "Tentar novamente", exact: true })).toBeEnabled();
   await expect(page.getByTestId("transcript-cue")).toHaveCount(0);
   const stored = await page.evaluate(
     async (id) =>
@@ -350,4 +311,92 @@ test("cancellation invalidates a late completed poll instead of restoring delete
     saved.takeId,
   );
   expect(stored).toBeNull();
+});
+
+test("an unconfigured service shows a concise empty state without imports or automatic uploads", async ({ page }) => {
+  const saved = await seedRecordingReview(page);
+  let uploads = 0;
+  await page.route('**/api/transcription-upload', route => { uploads++; return route.fulfill({ status: 503, json: { error: 'Unavailable' } }); });
+  await page.route('**/api/transcriptions*', route => route.fulfill({ json: { ...idle, configured: false } }));
+  await page.goto(`/app?test=1#project/${saved.projectId}/recording/${saved.takeId}`);
+  await expect(page.getByTestId('recording-detail')).toBeVisible();
+  await expect(page.getByTestId('transcription-status')).toHaveText('Transcrição indisponível no momento.Verificar novamente');
+  await expect(page.getByTestId('transcript-file-input')).toHaveCount(0);
+  await expect(page.getByText(/Importar transcrição|SRT ou VTT|Cada palavra,|Dois formatos salvos|DO VÍDEO PARA AS PALAVRAS/)).toHaveCount(0);
+  expect(uploads).toBe(0);
+});
+
+test('a cloud recording checks saved text before starting and persists its generated transcript once', async ({ page }) => {
+  const saved = await seedRecordingReview(page);
+  await mockBlobClient(page);
+  const record = await page.evaluate(async saved => {
+    const store = await import('/src/projects/store.ts');
+    const take = store.listProjectTakes().find(item => item.id === saved.takeId)!;
+    const record = { ...take, id: 'a0000000-0000-4000-8000-000000000002', localId: take.id, projectName: 'Projeto', status: 'ready' };
+    store.mergeCloudRecordings([record]);
+    return record;
+  }, saved);
+  let releaseStored: () => void = () => {};
+  const holdStored = new Promise<void>(resolve => { releaseStored = resolve; });
+  let stored: typeof automatic | null = null, version = 0, submitted = 0, uploaded = 0, statusReads = 0;
+  const writes: any[] = [];
+  await page.route('**/api/recordings*', async route => {
+    expect(route.request().headers().authorization).toBe('Bearer fixture-session-token');
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      writes.push(body); expect(body.expectedVersion).toBe(version);
+      stored = body.transcript; version++;
+      return route.fulfill({ json: { version } });
+    }
+    if (new URL(route.request().url()).searchParams.get('transcript')) {
+      await holdStored;
+      return route.fulfill({ json: { transcript: stored, version } });
+    }
+    return route.fulfill({ json: { configured: true, recordings: [record], nextCursor: null, usedBytes: saved.bytes * 2, maxStorageBytes: 10 * 1024 ** 3 } });
+  });
+  await page.route('**/api/transcription-upload', route => { uploaded++; return route.fulfill({ json: {} }); });
+  await page.route('**/api/transcriptions*', route => {
+    if (route.request().method() === 'POST') submitted++;
+    else statusReads++;
+    return route.fulfill({ json: { ...idle, status: submitted ? 'completed' : 'idle', ...(submitted ? { jobId: 'cloud-generated', transcript: automatic } : {}) } });
+  });
+  await openRecordingLibrary(page, saved.projectId);
+  await openRecordingDetail(page);
+  await expect.poll(() => statusReads).toBeGreaterThan(0);
+  expect(uploaded).toBe(0);
+  releaseStored();
+  await expect(page.getByRole('button', { name: 'Ir para palavra: criadores.' })).toBeVisible();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(submitted).toBe(1);
+  expect(writes[0]).toMatchObject({ action: 'transcript', recordingId: record.id, expectedVersion: 0, transcript: { origin: 'automatic', words: automatic.words } });
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(page.getByRole('button', { name: 'Ir para palavra: criadores.' })).toBeVisible();
+  expect(uploaded).toBe(1); expect(submitted).toBe(1); expect(writes).toHaveLength(1);
+});
+
+test('a saved cloud transcript remains visible and never triggers ASR when its local cache is full', async ({ page }) => {
+  const saved = await seedRecordingReview(page);
+  const record = await page.evaluate(async saved => {
+    const store = await import('/src/projects/store.ts');
+    const take = store.listProjectTakes().find(item => item.id === saved.takeId)!;
+    const record = { ...take, id: 'a0000000-0000-4000-8000-000000000003', localId: take.id, projectName: 'Projeto', status: 'ready' };
+    store.mergeCloudRecordings([record]); return record;
+  }, saved);
+  await page.addInitScript(() => {
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith('grava-simples-transcript-v1')) throw new DOMException('Fixture quota full', 'QuotaExceededError');
+      write.call(this, key, value);
+    };
+  });
+  let uploads = 0, submissions = 0;
+  await page.route('**/api/recordings*', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('transcript') ? { transcript: automatic, version: 3 } : { configured: true, recordings: [record], nextCursor: null, usedBytes: saved.bytes * 2, maxStorageBytes: 10 * 1024 ** 3 } }));
+  await page.route('**/api/transcriptions*', route => { if (route.request().method() === 'POST') submissions++; return route.fulfill({ json: idle }); });
+  await page.route('**/api/transcription-upload', route => { uploads++; return route.fulfill({ status: 503, json: { error: 'Unexpected upload' } }); });
+  await openRecordingLibrary(page, saved.projectId);
+  await openRecordingDetail(page);
+  await expect(page.getByRole('button', { name: 'Ir para palavra: criadores.' })).toBeVisible();
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(page.getByRole('button', { name: 'Ir para palavra: criadores.' })).toBeVisible();
+  expect(uploads).toBe(0); expect(submissions).toBe(0);
 });

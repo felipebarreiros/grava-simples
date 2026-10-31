@@ -97,7 +97,7 @@ export class StudioSession {
   private sceneBackgroundLoad = 0;
   private countdownRemainingMs = 300_000;
   private countdownStartedAt?: number;
-  private controls: StudioControls = { cameraZoom: 1.6, sourceVisibility: { camera: true, screen: true }, microphoneMuted: false, microphoneGainDb: 0 };
+  private controls: StudioControls = { cameraZoom: 1.4, sourceVisibility: { camera: true, screen: true }, microphoneMuted: false, microphoneGainDb: 0 };
   private error?: string;
   private result?: RecordingResult;
   private metrics: StudioMetrics = {
@@ -420,7 +420,7 @@ export class StudioSession {
     const appearance = normalizeSceneAppearance(options.layout, options.appearance);
     const activeBackground = appearance.backgroundAssetId === this.sceneBackgroundAssetId ? this.sceneBackground : undefined;
     this.compositor.render(context, canvas.width, canvas.height, {
-      layout: options.layout, appearance, zoom: options.zoom ?? 1.6,
+      layout: options.layout, appearance, zoom: options.zoom ?? 1.4,
       orientation: options.orientation ?? (canvas.width >= canvas.height ? 'landscape' : 'portrait'),
       remainingSeconds: options.layout === 'countdown' && this.config?.layout === 'countdown' ? this.getCountdownStatus(options.now).remainingSeconds : appearance.countdownSeconds,
       camera, screen, layerSources, background: options.background === undefined ? activeBackground : options.background, engine: this.engine,

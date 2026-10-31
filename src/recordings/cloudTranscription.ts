@@ -33,6 +33,39 @@ const receiptKey = (userId: string, id: string) =>
   `grava-cloud-transcription-v1:${userId}:${id}`;
 const replacementKey = (userId: string, id: string) =>
   `grava-cloud-replacement-v1:${userId}:${id}`;
+export type AutomaticTranscriptionAttempt = "started" | "cancelled" | "removed";
+const automaticKey = (userId: string, id: string) =>
+  `grava-auto-transcription-v1:${userId}:${id}`;
+const automaticAttempts = new Map<string, AutomaticTranscriptionAttempt>();
+
+/** Device intent only; actual job authorization and idempotency belong to the API. */
+export function automaticTranscriptionAttempt(userId: string, id: string): AutomaticTranscriptionAttempt | null {
+  const key = automaticKey(userId, id);
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === "started" || stored === "cancelled" || stored === "removed") return stored;
+  } catch { /* The in-memory marker still prevents duplicate effects when storage is full. */ }
+  return automaticAttempts.get(key) ?? null;
+}
+export function markAutomaticTranscription(userId: string, id: string, state: AutomaticTranscriptionAttempt): void {
+  const key = automaticKey(userId, id);
+  automaticAttempts.set(key, state);
+  try { localStorage.setItem(key, state); } catch { /* Transcription does not depend on device storage availability. */ }
+}
+export async function claimAutomaticTranscription(userId: string, id: string): Promise<boolean> {
+  const claim = () => {
+    if (automaticTranscriptionAttempt(userId, id)) return false;
+    markAutomaticTranscription(userId, id, "started");
+    return true;
+  };
+  // A short device lock makes the intent check atomic across tabs; it is never
+  // held while uploading or waiting for a speech provider.
+  if (typeof globalThis.navigator?.locks?.request === "function") {
+    try { return await navigator.locks.request(automaticKey(userId, id), claim); }
+    catch { /* A browser may expose Web Locks while device policy denies it. */ }
+  }
+  return claim();
+}
 export function rememberCloudTranscription(userId: string, id: string): void {
   localStorage.setItem(receiptKey(userId, id), "1");
 }
@@ -236,7 +269,7 @@ export async function startCloudTranscription({
   const state = await getCloudTranscription(recordingId, getToken, signal);
   if (!state.configured)
     throw new Error(
-      "A transcrição automática ainda não está configurada. Você pode importar uma legenda.",
+      "A transcrição está indisponível no momento. Tente novamente mais tarde.",
     );
   if (
     state.status === "queued" ||

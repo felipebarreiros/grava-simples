@@ -895,3 +895,20 @@
     scroll-behavior: auto !important;
   }
 }
+
+.cloud-transcription-status.is-empty {
+  display: flex;
+  min-height: 240px;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0;
+  padding: 28px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  color: var(--ui-muted);
+}
+.cloud-transcription-status.is-empty > button { margin-top: 0; }

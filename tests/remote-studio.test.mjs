@@ -39,3 +39,13 @@ test('phone reports the actual shared recording state/profile without media or c
   assert.equal(studioRemoteSnapshot(project, event('complete'), options).recordState, 'ready');
   assert.equal(JSON.stringify(active).includes('blob:'), false);
 });
+
+test('a pending start stays cancellable before React busy state updates and never reports active recording', () => {
+  const normal = studioRemoteSnapshot(project, event(), options);
+  assert.equal(Object.hasOwn(normal, 'recordingStartPending'), false);
+  const pending = studioRemoteSnapshot(project, event(), { ...options, recordingStartPending: true });
+  assert.equal(pending.recordingStartPending, true);
+  assert.equal(pending.ready, false);
+  assert.equal(pending.recordState, 'unavailable');
+  assert.equal(Object.hasOwn(studioRemoteSnapshot(project, event(), { ...options, recordingStartPending: false }), 'recordingStartPending'), false);
+});

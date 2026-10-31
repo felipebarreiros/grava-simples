@@ -25,11 +25,11 @@ export function sceneSourcesReady(scene: ProjectScene, event: StudioEvent | unde
 }
 
 export function studioRemoteSnapshot(project: Project, event: StudioEvent | undefined, options: {
-  available: boolean; busy: boolean; matches: boolean; exporting: boolean; hasSource: (id: string) => boolean;
+  available: boolean; busy: boolean; matches: boolean; exporting: boolean; hasSource: (id: string) => boolean; recordingStartPending?: boolean;
 }): RemoteSnapshot {
   const scene = project.scenes.find(item => item.id === project.selectedSceneId);
   const prepared = event?.state === 'ready' || event?.state === 'complete';
-  const ready = options.available && !options.busy && !options.exporting && options.matches && prepared
+  const ready = options.available && !options.busy && !options.recordingStartPending && !options.exporting && options.matches && prepared
     && !!scene && sceneSourcesReady(scene, event, options.hasSource);
   const resolution = event?.config?.resolution ?? project.settings.resolution;
   const width = resolution === '4k' ? 3840 : resolution === '1080' ? 1920 : resolution === '720' ? 1280 : 640;
@@ -47,6 +47,7 @@ export function studioRemoteSnapshot(project: Project, event: StudioEvent | unde
     microphoneMuted: event?.controls.microphoneMuted ?? scene?.appearance?.microphoneMuted ?? false,
     microphoneGainDb: event?.controls.microphoneGainDb ?? scene?.appearance?.microphoneGainDb ?? 0,
     recordState: event?.state === 'recording' ? 'recording' : event?.state === 'stopping' ? 'stopping' : ready ? 'ready' : 'unavailable',
+    ...(options.recordingStartPending === true ? { recordingStartPending: true } : {}),
     elapsedMs: event?.metrics.elapsedMs ?? 0,
     bytes: (event?.metrics.bytes.landscape ?? 0) + (event?.metrics.bytes.portrait ?? 0),
     fps: event?.metrics.measuredFps ?? 0,

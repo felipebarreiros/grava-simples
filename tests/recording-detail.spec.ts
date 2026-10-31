@@ -7,10 +7,22 @@ import {
   openRecordingDetail as openDetail,
 } from "./fixtures/recordings";
 
-const subtitle =
-  "WEBVTT\n\n00:00.000 --> 00:02.000\nUma ideia merece sair do papel.\n\n00:02.000 --> 00:04.000\nA criação começa com uma boa história.\n\n00:04.000 --> 00:06.000\nVamos gravar o próximo capítulo.\n";
+const generatedTranscript = {
+  version: 1, origin: "automatic", provider: "assemblyai", sourceName: "Transcrição automática", importedAt: 1, updatedAt: 1,
+  cues: [
+    { id: "cue-1", start: 0, end: 2, text: "Uma ideia merece sair do papel." },
+    { id: "cue-2", start: 2, end: 4, text: "A criação começa com uma boa história." },
+    { id: "cue-3", start: 4, end: 6, text: "Vamos gravar o próximo capítulo." },
+  ],
+};
+async function saveGeneratedTranscript(page: Parameters<typeof seed>[0], id: string) {
+  await page.evaluate(async ({ id, transcript }) => {
+    (await import('/src/recordings/transcript.ts')).saveTranscript(id, transcript as any);
+  }, { id, transcript: generatedTranscript });
+  await page.reload({ waitUntil: "networkidle" });
+}
 
-test("recording page imports real timed captions, seeks, corrects, bookmarks and restores its direct link", async ({
+test("recording page shows generated captions, seeks, corrects, bookmarks and restores its direct link", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -25,7 +37,7 @@ test("recording page imports real timed captions, seeks, corrects, bookmarks and
   await openDetail(page);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByText("A transcrição automática ainda não está disponível.", {
+    page.getByText("Transcrição indisponível no momento.", {
       exact: false,
     }),
   ).toBeVisible();
@@ -33,11 +45,7 @@ test("recording page imports real timed captions, seeks, corrects, bookmarks and
     path: resolve(".context/screenshots/recording-detail-empty.png"),
     fullPage: true,
   });
-  await page.getByTestId("transcript-file-input").setInputFiles({
-    name: "historia.vtt",
-    mimeType: "text/vtt",
-    buffer: Buffer.from(subtitle),
-  });
+  await saveGeneratedTranscript(page, saved.takeId);
   await expect(page.getByTestId("transcript-cue")).toHaveCount(3);
   await page
     .getByRole("button", { name: "Ir para 00:02", exact: true })
@@ -120,17 +128,13 @@ test("recording page imports real timed captions, seeks, corrects, bookmarks and
   expect(errors).toEqual([]);
 });
 
-test("format switches preserve playhead and captions export with actual timing; import replacement is reversible", async ({
+test("format switches preserve playhead and generated captions export with source timing", async ({
   page,
 }) => {
   const saved = await seed(page);
   await openLibrary(page, saved.projectId);
   await openDetail(page);
-  await page.getByTestId("transcript-file-input").setInputFiles({
-    name: "historia.vtt",
-    mimeType: "text/vtt",
-    buffer: Buffer.from(subtitle),
-  });
+  await saveGeneratedTranscript(page, saved.takeId);
   await page
     .getByRole("button", { name: "Ir para 00:04", exact: true })
     .click();
@@ -170,25 +174,8 @@ test("format switches preserve playhead and captions export with actual timing; 
   const exported = await readFile(path!, "utf8");
   expect(exported).toContain("00:00:02,000 --> 00:00:04,000");
   expect(exported).toContain("A criação começa");
-  await page.getByTestId("transcript-file-input").setInputFiles({
-    name: "nova.vtt",
-    mimeType: "text/vtt",
-    buffer: Buffer.from(subtitle.replace("Uma ideia", "Outra ideia")),
-  });
-  await expect(page.getByRole("alertdialog")).toBeVisible();
-  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
-  await expect(page.getByTestId("transcript-cue").first()).toContainText(
-    "Uma ideia",
-  );
-  await page.getByTestId("transcript-file-input").setInputFiles({
-    name: "invalida.vtt",
-    mimeType: "text/vtt",
-    buffer: Buffer.from("WEBVTT\n\n00:20.000 --> 00:21.000\nTempo incorreto\n"),
-  });
-  await expect(page.getByRole("alert")).toContainText("ultrapassam a duração");
-  await expect(page.getByTestId("transcript-cue")).toHaveCount(3);
-  await page.getByRole("button", { name: "Fechar aviso da gravação" }).click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByTestId("transcript-file-input")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Importar transcrição/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Baixar gravação" }).click();
   const originalEvent = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: "Original horizontal" }).click();
@@ -209,11 +196,7 @@ test("deleting the open recording closes its page and removes local transcript a
   const saved = await seed(page);
   await openLibrary(page, saved.projectId);
   await openDetail(page);
-  await page.getByTestId("transcript-file-input").setInputFiles({
-    name: "historia.vtt",
-    mimeType: "text/vtt",
-    buffer: Buffer.from(subtitle),
-  });
+  await saveGeneratedTranscript(page, saved.takeId);
   await page
     .getByRole("button", { name: "Marcar momento", exact: true })
     .click();
