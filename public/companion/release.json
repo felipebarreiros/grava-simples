@@ -5,6 +5,11 @@
   "notarized": false,
   "compiler": "go version go1.26.8-X:nodwarf5 linux/amd64",
   "minimumGoVersion": "1.26.8",
+  "macosDmg": {
+    "url": "/companion/gravasimples-macos.dmg",
+    "bytes": 6482166,
+    "sha256": "a572d0b5db1d4a8c4a1f47b09bc24b18d8182d7fdafba92d311cfc9bf7ee85f5"
+  },
   "source": {
     "url": "/companion/companion-source.zip",
     "sha256": "6bd86ee09dc5a81b26a30f97b71c5f27f165720bb22f2e77a1b923cc1b25f791"
@@ -46,10 +51,5 @@
         }
       ]
     }
-  ],
-  "macosDmg": {
-    "url": "/companion/gravasimples-macos.dmg",
-    "bytes": 6482166,
-    "sha256": "a572d0b5db1d4a8c4a1f47b09bc24b18d8182d7fdafba92d311cfc9bf7ee85f5"
-  }
+  ]
 }
