@@ -2,16 +2,29 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { ApiError } from "./security.ts";
 import { errorResponse, grantUpload } from "./service.ts";
 import type { TranscriptionDependencies } from "./types.ts";
+import { observeServerRequest, type RequestTelemetry } from "../analytics.ts";
 
 export async function handleTranscriptionUpload(
   request: Request,
   deps: TranscriptionDependencies,
   token?: string,
 ): Promise<Response> {
+  return observeServerRequest("transcription-upload", request, (telemetry) =>
+    handleObservedUpload(request, deps, telemetry, token),
+  );
+}
+
+async function handleObservedUpload(
+  request: Request,
+  deps: TranscriptionDependencies,
+  telemetry: RequestTelemetry,
+  token?: string,
+): Promise<Response> {
   try {
     if (request.method !== "POST")
       throw new ApiError(405, "Método não permitido.");
     const { userId } = await deps.authenticate(request);
+    telemetry.identify(userId);
     if (!deps.configured)
       throw new ApiError(
         503,

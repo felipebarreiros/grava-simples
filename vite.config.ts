@@ -36,5 +36,5 @@ export default defineConfig({
   plugins: [sourceArchives(), react()],
   server: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: true, headers },
   preview: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: true, headers },
-  build: { target: 'es2022' },
+  build: { target: 'es2022', sourcemap: 'hidden' },
 });

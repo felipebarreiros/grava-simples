@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { UserButton, useAuth } from "@clerk/react";
+import { reportApplicationError, trackCreatorEvent, trackPage } from './analytics/client';
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -202,6 +203,7 @@ export default function App() {
       : "projects",
   );
   const [tab, setTab] = useState<"studio" | "recordings">("studio");
+  useEffect(() => { trackPage(page === 'studio' && tab === 'recordings' ? 'recordings' : page); }, [page, tab]);
   const currentPage = useRef(page);
   currentPage.current = page;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -431,7 +433,7 @@ export default function App() {
           setResult(event.result);
           setResultOpen(true);
           void saveProjectTake(recordingProject.current, event.result)
-            .then(refresh)
+            .then(() => { refresh(); trackCreatorEvent('recording_saved'); })
             .catch((failure) =>
               setError(
                 `O vídeo foi gravado, mas não entrou no projeto: ${message(failure)}`,
@@ -998,7 +1000,9 @@ export default function App() {
     recordingProject.current = project.id;
     try {
       await session.current.start();
+      trackCreatorEvent('recording_started');
     } catch (failure) {
+      reportApplicationError(failure, 'recording');
       setError(message(failure));
     } finally {
       setWorking(false);
@@ -1552,6 +1556,7 @@ export default function App() {
         refresh();
       } else {
         const item = createProject(projectEditor.name);
+        trackCreatorEvent('project_created');
         refresh();
         await openProject(item);
       }
@@ -1718,6 +1723,8 @@ export default function App() {
       const destination = `${location.pathname}${location.search}#project/${owner.id}/recording/${take.id}`;
       if (replace) history.replaceState(null, "", destination);
       else if (`${location.pathname}${location.search}${location.hash}` !== destination) history.pushState(null, "", destination);
+      trackPage();
+      trackCreatorEvent('recording_opened');
     } catch (failure) {
       setError(`Não foi possível abrir a gravação: ${message(failure)}`);
       setPage("studio");
@@ -1807,6 +1814,7 @@ export default function App() {
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
+      trackCreatorEvent('video_downloaded', { orientation: file.orientation });
     } catch (failure) {
       setDownloadState((current) => ({
         ...current,

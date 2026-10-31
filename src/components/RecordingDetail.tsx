@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/react";
+import { reportApplicationError, trackCreatorEvent } from '../analytics/client';
 import {
   ArrowLeft,
   ArrowDownToLine,
@@ -317,10 +318,12 @@ export function RecordingDetail({
     cloudOperation.current = operation;
     try {
       const next = await operation;
+      trackCreatorEvent('transcription_requested');
       if (!mounted.current || cancelRequested.current) return;
       setCloud(next);
       setCloudReload((value) => value + 1);
     } catch (error) {
+      if (!controller.signal.aborted) reportApplicationError(error, 'transcription');
       if (mounted.current && !controller.signal.aborted)
         setCloudError(failureMessage(error));
     } finally {
@@ -474,6 +477,7 @@ export function RecordingDetail({
       persistTranscript(
         updateTranscriptCue(transcript, editing.id, editing.text),
       );
+      trackCreatorEvent('transcript_corrected');
     } catch (error) {
       setError(failureMessage(error));
     }
@@ -494,6 +498,7 @@ export function RecordingDetail({
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
+      trackCreatorEvent('transcript_downloaded', { format });
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       setError(failureMessage(error));

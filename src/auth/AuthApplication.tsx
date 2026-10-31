@@ -9,6 +9,8 @@ import { clerkAppearance } from './appearance';
 import { createClerkRouterNavigation, studioRedirectUrl, studioReturnUrl } from './navigation';
 import { loadStudio } from './loadStudio';
 import { useAwaitableNavigate } from './useAwaitableNavigate';
+import { AnalyticsBridge } from '../analytics/AnalyticsBridge';
+import { reportApplicationError } from '../analytics/client';
 
 // Loading this module initializes the studio's project state. Only import it
 // after the authenticated route guard succeeds.
@@ -31,6 +33,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
 class AuthErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error) { reportApplicationError(error, 'authentication'); }
   render() {
     if (this.state.failed) return <Unavailable />;
     return this.props.children;
@@ -145,6 +148,7 @@ export function AuthApplication() {
         routerReplace={clerkRouter.replace}
         appearance={clerkAppearance}
       >
+        <AnalyticsBridge />
         <AuthenticationRoutes />
       </ClerkProvider>
     </AuthErrorBoundary>

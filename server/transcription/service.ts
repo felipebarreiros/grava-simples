@@ -1,5 +1,6 @@
 import { ApiError } from "./security.ts";
 import { normalizeTranscript } from "./normalize.ts";
+import { observeServerRequest, type RequestTelemetry } from "../analytics.ts";
 import {
   ALLOWED_CONTENT_TYPES,
   JOB_LIFETIME_MS,
@@ -178,10 +179,21 @@ export async function handleTranscriptions(
   request: Request,
   deps: TranscriptionDependencies,
 ): Promise<Response> {
+  return observeServerRequest("transcriptions", request, (telemetry) =>
+    handleObservedTranscriptions(request, deps, telemetry),
+  );
+}
+
+async function handleObservedTranscriptions(
+  request: Request,
+  deps: TranscriptionDependencies,
+  telemetry: RequestTelemetry,
+): Promise<Response> {
   try {
     if (!["GET", "POST", "DELETE"].includes(request.method))
       return json({ error: "Método não permitido." }, 405);
     const { userId } = await deps.authenticate(request);
+    telemetry.identify(userId);
     if (!deps.configured) {
       if (request.method === "GET")
         return json({
@@ -264,7 +276,7 @@ export async function handleTranscriptions(
         };
         await deps.repository.save(submitting);
         try {
-          const remote = await deps.provider.submit(signedUrl);
+          const remote = await telemetry.measure("provider_submit", () => deps.provider.submit(signedUrl));
           if (!remote.id || !/^[A-Za-z0-9_-]{1,128}$/.test(remote.id))
             throw new Error("Invalid provider job");
           const next: TranscriptionJob = {
@@ -275,8 +287,10 @@ export async function handleTranscriptions(
             updatedAt: deps.now(),
           };
           await deps.repository.save(next);
+          telemetry.capture({ event: "transcription_submitted", status: next.status === "processing" ? "processing" : "queued" });
           return json(jobResponse(next), 202);
         } catch {
+          telemetry.failure("provider_submission_failed");
           // No automatic POST retry: a timeout can mean the provider accepted it.
           await deps.repository.save({
             ...submitting,
@@ -308,7 +322,10 @@ export async function handleTranscriptions(
           updatedAt: deps.now(),
         };
         await deps.repository.save(tombstone);
-        const removed = await cleanupSources(tombstone, deps);
+        if (["uploading", "submitting", "queued", "processing"].includes(job.status)) {
+          telemetry.capture({ event: "transcription_cancelled", previous_status: job.status as "uploading" | "submitting" | "queued" | "processing" });
+        }
+        const removed = await telemetry.measure("source_cleanup", () => cleanupSources(tombstone, deps));
         return json({ ...jobResponse(null), cleanupPending: !removed });
       }
       if (job.expiresAt <= deps.now()) {
@@ -330,7 +347,7 @@ export async function handleTranscriptions(
       )
         return json(jobResponse(job));
       if (!job.providerId) return json(jobResponse(job), 202);
-      const remote = await deps.provider.get(job.providerId);
+      const remote = await telemetry.measure("provider_poll", () => deps.provider.get(job.providerId!));
       if (
         !["queued", "processing", "completed", "error"].includes(remote.status)
       )
@@ -347,6 +364,7 @@ export async function handleTranscriptions(
         try {
           next = { ...next, ...normalizeTranscript(remote, deps.now()) };
         } catch {
+          telemetry.failure("invalid_transcript");
           next = {
             ...next,
             status: "error",
@@ -355,12 +373,15 @@ export async function handleTranscriptions(
           };
         }
       }
-      if (remote.status === "error")
+      if (remote.status === "error") {
+        telemetry.failure("provider_transcription_failed");
         next.error =
           "Não foi possível transcrever esta gravação. Verifique o áudio e tente novamente.";
+      }
       await deps.repository.save(next);
+      if (next.status === "completed") telemetry.capture({ event: "transcription_completed", outcome: next.noSpeech ? "no_speech" : "speech" });
       if (next.status === "completed" || next.status === "error")
-        await cleanupSources(next, deps);
+        await telemetry.measure("source_cleanup", () => cleanupSources(next, deps));
       return json(jobResponse(next));
     });
   } catch (error) {

@@ -2,8 +2,19 @@ import { timingSafeEqual } from "node:crypto";
 import { ApiError } from "./security.ts";
 import { cleanupSources, errorResponse } from "./service.ts";
 import type { TranscriptionDependencies } from "./types.ts";
+import { observeServerRequest } from "../analytics.ts";
 
 export async function handleCleanup(
+  request: Request,
+  deps: TranscriptionDependencies,
+  secret?: string,
+): Promise<Response> {
+  return observeServerRequest("transcription-cleanup", request, () =>
+    handleObservedCleanup(request, deps, secret),
+  );
+}
+
+async function handleObservedCleanup(
   request: Request,
   deps: TranscriptionDependencies,
   secret?: string,
