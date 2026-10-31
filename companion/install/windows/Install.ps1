@@ -41,6 +41,8 @@ try {
   if (Test-Path -LiteralPath $airplayPayload -PathType Leaf) {
     New-Item -ItemType Directory -Path $airplayDirectory -Force | Out-Null
     Copy-Item -Path (Join-Path $airplayPayloadDirectory '*') -Destination $airplayDirectory -Recurse -Force
+    $candidate = Get-ChildItem -LiteralPath $airplayDirectory -Filter 'popyachsa-airplay.exe' -File -Recurse | Select-Object -First 1
+    if ($candidate) { $airplayExecutable = $candidate.FullName }
   }
   foreach ($document in @('Uninstall.ps1', 'Uninstall.cmd', 'COPYING.txt', 'THIRD-PARTY-NOTICES.txt', 'LEIA-ME.txt')) {
     $source = Join-Path $PSScriptRoot $document

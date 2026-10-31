@@ -7,14 +7,14 @@
   "minimumGoVersion": "1.26.8",
   "source": {
     "url": "/companion/companion-source.zip",
-    "sha256": "29b792611bc6845f34ecd8bcca94397106836aeb336b76c7e27668e41806fb7a"
+    "sha256": "baf5b867073022a54b38a9020f2d85413c27a83cc3b2b5c6bb5cb7b6d32da6bc"
   },
   "artifacts": [
     {
       "platform": "macos",
       "url": "/companion/gravasimples-macos.zip",
-      "bytes": 6009016,
-      "sha256": "c6f69551d0fb077d4b3e5bc813ca1b5860fc4829f0e5c032d43587ed6bbf6388",
+      "bytes": 6009080,
+      "sha256": "ec03d181843f55ad650190fc23b3d5d04fed0a1f58df4ad1bad7b197068770dc",
       "binaries": [
         {
           "arch": "arm64",
@@ -32,8 +32,8 @@
     {
       "platform": "windows",
       "url": "/companion/gravasimples-windows.zip",
-      "bytes": 5984051,
-      "sha256": "32e5e6bfc1cc1a5ecc42702b8a1d7c023ee9f0947fff81cd20d0ed74e3cff598",
+      "bytes": 5984179,
+      "sha256": "fdc7b1a8eba537b70cbbefa8a9a7f7f21b28d98916bc41741c0384324297bcbc",
       "binaries": [
         {
           "arch": "arm64",

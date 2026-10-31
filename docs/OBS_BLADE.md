@@ -8,7 +8,7 @@ iPhone / Android OBS Blade → same Wi-Fi → local companion ↔ studio browser
 
 ## One-time computer setup
 
-Open **Celular** in the studio header and download the companion for **Mac** or **Windows**. Each ZIP includes the native executables, an installer and an uninstaller. No Node.js, Go, Docker, terminal commands or cloud settings are needed on the recording computer.
+Open **Celular** in the studio header and download the companion for **Mac** or **Windows**. The AirPlay-enabled installer includes the receiver alongside the native executables, installer and uninstaller. No Node.js, Go, Docker, terminal commands or cloud settings are needed on the recording computer.
 
 - **macOS:** extract the ZIP and open `Install.command`. The installer selects Apple Silicon or Intel, installs into the current user's Application Support directory, registers a user LaunchAgent and starts the companion. The installer opens Terminal to display its result; you do not type commands.
 - **Windows:** extract the ZIP and open `Install.cmd`. It selects ARM64 or x64, installs into the current user's Local AppData directory, registers startup under that user's Run key and starts the companion. The installer uses the bundled PowerShell script without changing the machine's execution policy.
@@ -18,6 +18,8 @@ These development packages are unsigned. macOS Gatekeeper or Windows SmartScreen
 Allow the site's **local network / apps on this device** permission when Chrome asks. This one-time browser permission connects the website to the installed companion. After permission is granted, reopening the studio reconnects automatically. A blocked permission shows instructions to re-enable it in site settings; a missing companion shows download/install actions. See [Chrome Local Network Access](https://developer.chrome.com/docs/modern-web-guidance/guides/security/local-network-access).
 
 The helper starts at login on both platforms. No Chrome extension or Chrome Web Store installation is required. Initial qualification targets current desktop Chrome on Mac and Windows; other browsers must be tested separately.
+
+When an AirPlay-enabled installer is open with the studio tab, the companion starts the local AirPlay receiver and advertises **GravaSimples** on the same Wi-Fi network. On an iPad, open Control Center, choose **Screen Mirroring**, and select GravaSimples. The receiver opens a native window; choose that window once as the studio's screen source. Closing the studio stops the receiver so the computer is not advertised while GravaSimples is closed. Mirroring sends rendered pixels, so handwriting in Notes appears exactly as drawn but is not exposed as editable Apple Pencil events. Protected video may refuse mirroring.
 
 ## Pair OBS Blade once
 

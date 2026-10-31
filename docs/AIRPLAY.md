@@ -10,6 +10,8 @@ The selected receiver must support AirPlay legacy mirroring on both macOS and Wi
 
 The current upstream candidate is [UxPlay](https://github.com/FDH2/UxPlay), which supports macOS and Windows and is GPL-3. Its GStreamer runtime must be packaged with the executable; copying only `uxplay` is insufficient. The release job must therefore build and bundle the matching runtime libraries/plugins and corresponding source/notices before publishing an AirPlay-enabled installer.
 
+The Windows native package job uses the project's MSYS2/UCRT64 recipe and bundles the GStreamer DLL/plugin closure. `scripts/build-airplay-runtime-windows.ps1` automates the pinned build on a Windows runner with MSYS2 and returns a self-contained `dist` directory. Pass that directory as `AIRPLAY_BUNDLE` while building the Windows companion package; the installer searches it recursively for `popyachsa-airplay.exe` and preserves the DLL/plugin layout.
+
 The macOS build uses [Popyachsa-AirPlay](https://github.com/Recluse/Popyachsa-AirPlay) at pinned revision `5497138ed8b2fb5106df1532d325e30f63baf9ed`. Its build scripts assemble a self-contained app bundle with the patched UxPlay engine and GStreamer runtime. Run `npm run build:airplay-runtime` on a macOS runner, then pass the reported app bundle as `AIRPLAY_BUNDLE` and the upstream `LICENSE` as `AIRPLAY_LICENSE_FILE` when running `npm run build:companion` or `npm run build:macos-dmg`. The Windows native package job must use the project's MSYS2/UCRT64 build recipe and bundle the GStreamer DLL/plugin closure in the same way.
 
 ## Mac distribution
