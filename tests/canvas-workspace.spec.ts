@@ -66,6 +66,21 @@ async function dragTo(page: Page, id: string, orientation: Orientation, target: 
   return { editor: editor!, initial };
 }
 
+async function startCornerResize(page: Page, orientation: Orientation, corner: 'nw' | 'ne' | 'se' | 'sw') {
+  const editor = page.getByTestId(`canvas-editor-${orientation}`);
+  const bounds = await editor.boundingBox();
+  const handle = await page.getByTestId(`resize-${orientation}-${corner}`).boundingBox();
+  expect(bounds).toBeTruthy();
+  expect(handle).toBeTruthy();
+  await editor.evaluate(element => element.addEventListener('pointerdown', event => {
+    element.setAttribute('data-test-pointer-id', String((event as PointerEvent).pointerId));
+  }, { once: true }));
+  const start = { x: handle!.x + handle!.width / 2, y: handle!.y + handle!.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  return { editor, bounds: bounds!, start, pointerId: Number(await editor.getAttribute('data-test-pointer-id')) };
+}
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1280, height: 720 },
@@ -227,4 +242,109 @@ test('canceled drags restore automatic framing and intentional offstage placemen
   await page.mouse.up();
   await expect.poll(async () => (await frameOf(page, id, 'landscape')).x).toBeCloseTo(-.1, 5);
   expect((await layer()).frames.portrait).toEqual(portrait);
+});
+
+test('corner resizing preserves current proportions and the opposite corner in both formats', async ({ page }) => {
+  await openStudio(page);
+  await prepare(page);
+  const id = await addText(page);
+  const initial = { x: .25, y: .22, width: .3, height: .18 };
+  await setFrame(page, 'landscape', initial);
+  await setFrame(page, 'portrait', initial);
+  for (const orientation of ['landscape', 'portrait'] as const) {
+    const other = orientation === 'landscape' ? 'portrait' : 'landscape';
+    for (const [index, corner] of (['nw', 'ne', 'se', 'sw'] as const).entries()) {
+      await setFrame(page, orientation, initial);
+      const untouched = await frameOf(page, id, other);
+      const { bounds, start } = await startCornerResize(page, orientation, corner);
+      // Alternate mostly-horizontal and mostly-vertical drags; both must scale.
+      const dx = (corner.includes('w') ? -1 : 1) * (index % 2 ? .025 : .09);
+      const dy = (corner.includes('n') ? -1 : 1) * (index % 2 ? .09 : .025);
+      await page.mouse.move(start.x + dx * bounds.width, start.y + dy * bounds.height, { steps: 5 });
+      await page.mouse.up();
+      const resized = await frameOf(page, id, orientation);
+      expect(resized.width).toBeGreaterThan(initial.width);
+      expect(resized.height).toBeGreaterThan(initial.height);
+      expect(resized.width / resized.height).toBeCloseTo(initial.width / initial.height, 6);
+      expect(corner.includes('w') ? resized.x + resized.width : resized.x)
+        .toBeCloseTo(corner.includes('w') ? initial.x + initial.width : initial.x, 6);
+      expect(corner.includes('n') ? resized.y + resized.height : resized.y)
+        .toBeCloseTo(corner.includes('n') ? initial.y + initial.height : initial.y, 6);
+      expect(await frameOf(page, id, other)).toEqual(untouched);
+    }
+  }
+});
+
+test('Shift temporarily permits corner stretching and a later drag keeps the new proportions', async ({ page }) => {
+  await openStudio(page);
+  await prepare(page);
+  const id = await addText(page);
+  const initial = { x: .2, y: .24, width: .3, height: .18 };
+  await setFrame(page, 'landscape', initial);
+  const { bounds, start } = await startCornerResize(page, 'landscape', 'se');
+  await page.keyboard.down('Shift');
+  await page.mouse.move(start.x + bounds.width * .12, start.y + bounds.height * .015, { steps: 5 });
+  let resized = await frameOf(page, id, 'landscape');
+  expect(Math.abs(resized.width / resized.height - initial.width / initial.height)).toBeGreaterThan(.2);
+  await page.keyboard.up('Shift');
+  await page.mouse.move(start.x + bounds.width * .13, start.y + bounds.height * .02, { steps: 3 });
+  resized = await frameOf(page, id, 'landscape');
+  expect(resized.width / resized.height).toBeCloseTo(initial.width / initial.height, 6);
+  await page.keyboard.down('Shift');
+  await page.mouse.move(start.x + bounds.width * .14, start.y + bounds.height * .025, { steps: 3 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  const stretched = await frameOf(page, id, 'landscape');
+  expect(Math.abs(stretched.width / stretched.height - initial.width / initial.height)).toBeGreaterThan(.2);
+  const next = await startCornerResize(page, 'landscape', 'se');
+  await page.mouse.move(next.start.x + next.bounds.width * .04, next.start.y + next.bounds.height * .01, { steps: 4 });
+  await page.mouse.up();
+  resized = await frameOf(page, id, 'landscape');
+  expect(resized.width / resized.height).toBeCloseTo(stretched.width / stretched.height, 6);
+  expect(resized.x).toBeCloseTo(initial.x, 6);
+  expect(resized.y).toBeCloseTo(initial.y, 6);
+});
+
+test('corner resizing keeps proportions at size limits, cancels cleanly, and leaves circular cameras round', async ({ page }) => {
+  await openStudio(page);
+  await prepare(page);
+  const id = await addText(page);
+  const initial = { x: .2, y: .25, width: .6, height: .1 };
+  await setFrame(page, 'landscape', initial);
+  for (const [delta, limit] of [[-3, 'minimum'], [3, 'maximum']] as const) {
+    await setFrame(page, 'landscape', initial);
+    const active = await startCornerResize(page, 'landscape', 'se');
+    await active.editor.dispatchEvent('pointermove', {
+      pointerId: active.pointerId, pointerType: 'mouse',
+      clientX: active.start.x + delta * active.bounds.width,
+      clientY: active.start.y + delta * active.bounds.height,
+    });
+    await expect.poll(async () => {
+      const frame = await frameOf(page, id, 'landscape');
+      return limit === 'minimum' ? frame.height : frame.width;
+    }).toBeCloseTo(limit === 'minimum' ? .02 : 2, 6);
+    const resized = await frameOf(page, id, 'landscape');
+    expect(resized.width / resized.height).toBeCloseTo(initial.width / initial.height, 6);
+    if (limit === 'minimum') expect(resized.height).toBeCloseTo(.02, 6);
+    else expect(resized.width).toBeCloseTo(2, 6);
+    expect(resized.x).toBeCloseTo(initial.x, 6);
+    expect(resized.y).toBeCloseTo(initial.y, 6);
+    await active.editor.dispatchEvent('pointercancel', { pointerId: active.pointerId, pointerType: 'mouse' });
+    await page.mouse.up();
+    expect(await frameOf(page, id, 'landscape')).toEqual(initial);
+  }
+
+  await page.getByTestId('layer-select-camera').click();
+  await page.getByTestId('camera-shape-circle').click();
+  for (const orientation of ['landscape', 'portrait'] as const) {
+    await setFrame(page, orientation, { x: .25, y: .25, width: .3, height: .2 });
+    const active = await startCornerResize(page, orientation, 'se');
+    await page.keyboard.down('Shift');
+    await page.mouse.move(active.start.x + active.bounds.width * .06, active.start.y + active.bounds.height * .02, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    const resized = await frameOf(page, 'camera', orientation);
+    const outputRatio = orientation === 'landscape' ? 16 / 9 : 9 / 16;
+    expect(resized.width / resized.height * outputRatio).toBeCloseTo(1, 6);
+  }
 });

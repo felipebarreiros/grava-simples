@@ -60,6 +60,10 @@ import { MuteNotice } from "./components/MuteNotice";
 import { GlobalSearch, type SearchResult } from "./components/GlobalSearch";
 import { RecordingDetail } from "./components/RecordingDetail";
 import { RecordingThumbnail } from "./components/RecordingThumbnail";
+import { RecordingCountdown } from "./components/RecordingCountdown";
+import { RemoteControl } from "./components/RemoteControl";
+import { sceneSourcesReady, studioRemoteSnapshot } from "./remote/studioAdapter";
+import type { RemoteCommand, RemoteCommandResult } from "./remote/types";
 import { CloudRecordingActions, CloudRecordingStorage, useCloudRecordingLibrary } from "./components/CloudRecordingStorage";
 import { setLocalAccount, getLocalAccount } from "./projects/keys";
 import { deleteCloudRecording, listCloudRecordings, materializeRecordingFile, openCloudRecording } from "./recordings/cloudStorage";
@@ -122,12 +126,27 @@ const defaultControls: StudioControls = {
   sourceVisibility: { camera: true, screen: true },
   microphoneMuted: false,
   microphoneGainDb: 0,
-  cameraZoom: 1.6,
+  cameraZoom: 1.4,
 };
 const isScreen = (layout: StudioLayout) =>
   layout === "screen" || layout === "screen-3d";
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+/** Cancellation clears the current timer, including during account/navigation cleanup. */
+function countdownSecond(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const finish = (completed: boolean) => {
+      window.clearTimeout(timer);
+      signal.removeEventListener('abort', cancel);
+      resolve(completed);
+    };
+    const cancel = () => finish(false);
+    const timer = window.setTimeout(() => finish(true), 1000);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
+}
+
 const time = (ms: number) =>
   `${Math.floor(ms / 60000)
     .toString()
@@ -212,6 +231,8 @@ export default function App() {
       : "projects",
   );
   const [tab, setTab] = useState<"studio" | "recordings">("studio");
+  const currentTab = useRef(tab);
+  currentTab.current = tab;
   useEffect(() => { trackPage(page === 'studio' && tab === 'recordings' ? 'recordings' : page); }, [page, tab]);
   const lastStudioView = useRef('');
   useEffect(() => {
@@ -240,6 +261,7 @@ export default function App() {
   const autoAttempt = useRef("");
   const requestedScene = useRef("");
   const preparationLock = useRef(false);
+  const remoteCommandLock = useRef(false);
   const appliedSceneKey = useRef("");
   const backgroundBusy = useRef(false);
   const coverTimes = useRef<Record<string, number>>({});
@@ -255,6 +277,9 @@ export default function App() {
   const [engineLoading, setEngineLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const [recordStartPending, setRecordStartPending] = useState(false);
+  const [recordCountdown, setRecordCountdown] = useState<number | null>(null);
+  const recordAttempt = useRef<AbortController | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
   const [sourcePicker, setSourcePicker] = useState<
@@ -318,7 +343,7 @@ export default function App() {
   const state = snapshot?.state ?? "idle";
   const recording = state === "recording";
   const transitioning =
-    working || state === "preparing" || state === "stopping";
+    working || recordStartPending || state === "preparing" || state === "stopping";
   const busy = recording || transitioning;
   const preview = ["ready", "recording", "stopping", "complete"].includes(
     state,
@@ -352,7 +377,7 @@ export default function App() {
     microphoneDeviceId: appearance.microphoneDeviceId || undefined,
     source,
     layout: scene?.layout ?? "camera",
-    zoom: scene?.zoom ?? 1.6,
+    zoom: scene?.zoom ?? 1.4,
     microphone:
       scene?.layout !== "countdown" ||
       metrics?.microphone?.live === true ||
@@ -515,6 +540,7 @@ export default function App() {
       .catch((failure) => { if (!cancelled) setError(message(failure)); });
     return () => {
       cancelled = true;
+      cancelPendingRecording(false);
       const studio = session.current;
       session.current = null;
       layerRestoreToken.current++;
@@ -700,7 +726,7 @@ export default function App() {
     appliedSceneKey.current = sceneKey;
     session.current?.setLayout(scene.layout);
     session.current?.setSceneAppearance(appearance);
-    session.current?.setCameraZoom(scene.zoom ?? 1.6);
+    session.current?.setCameraZoom(scene.zoom ?? 1.4);
     if (changed && scene.layout === "countdown")
       session.current?.resetCountdown();
   }, [engineReady, page, project.id, scene, appearance]);
@@ -806,13 +832,14 @@ export default function App() {
   function changeAppearance(next: SceneAppearance) {
     if (transitioning) return;
     const owner = currentProject.current;
+    const sceneId = owner.selectedSceneId;
     const changed = normalizeProjectSources({
       ...owner,
       scenes: owner.scenes.map((item) =>
-        item.id === scene.id ? { ...item, appearance: next } : item,
+        item.id === sceneId ? { ...item, appearance: next } : item,
       ),
     });
-    const visual = changed.scenes.find(item => item.id === scene.id)?.appearance;
+    const visual = changed.scenes.find(item => item.id === sceneId)?.appearance;
     if (visual) session.current?.setSceneAppearance(visual);
     currentProject.current = changed;
     setProject(changed);
@@ -917,6 +944,7 @@ export default function App() {
     }
   }
   async function closeProjectSession() {
+    cancelPendingRecording();
     const studio = session.current;
     session.current = null;
     layerRestoreToken.current++;
@@ -1013,7 +1041,7 @@ export default function App() {
     try {
       await studio.prepare(next);
       if (studio !== session.current) return false;
-      studio.setCameraZoom(next.zoom ?? 1.6);
+      studio.setCameraZoom(next.zoom ?? 1.4);
       studio.setSceneAppearance(next.appearance ?? appearance);
       const available = await studio.getAvailableDevices();
       if (studio !== session.current) return false;
@@ -1033,22 +1061,25 @@ export default function App() {
   }
   async function start() {
     if (!session.current || busy || !project) return;
+    const studio = session.current;
     setWorking(true);
     setError("");
     recordingProject.current = project.id;
     recordingTelemetry.current = { phase: 'starting', failed: false };
     const starting = performance.now();
     try {
-      await session.current.start();
+      await studio.start();
+      if (session.current !== studio || getLocalAccount() !== userId) return;
       recordingTelemetry.current.phase = 'recording';
       trackCreatorEvent('recording_started', { ...recordingSettings(config), duration_ms: elapsedRecordingOperation(starting) }, userId ?? undefined);
     } catch (failure) {
+      if (session.current !== studio || getLocalAccount() !== userId) return;
       if (!recordingTelemetry.current.failed) trackCreatorEvent('recording_failed', { ...recordingSettings(config), stage: 'start', duration_ms: elapsedRecordingOperation(starting), error_code: recordingFailureCode(failure) }, userId ?? undefined);
       recordingTelemetry.current = { phase: 'idle', failed: true };
       reportApplicationError(failure, 'recording');
       setError(message(failure));
     } finally {
-      setWorking(false);
+      if (session.current === studio && getLocalAccount() === userId) setWorking(false);
     }
   }
   async function stop() {
@@ -1063,42 +1094,179 @@ export default function App() {
     }
   }
   async function recordAction() {
+    if (recordAttempt.current) {
+      cancelPendingRecording();
+      return;
+    }
     flushPendingProject();
     if (recording) {
       await stop().catch(() => {});
       return;
     }
-    if (!session.current || busy || exporting || !project.id) return;
-    const captureStarted = performance.now();
-    trackCreatorEvent('capture_requested', { ...recordingSettings(config), stage: 'record_intent' });
-    const missing = appearance.layers.find(layer => {
-      if (!layer.visible || (layer.kind !== "screen" && layer.kind !== "camera")) return false;
-      // Preparation can acquire the primary camera; additional sources need an explicit connection.
-      if (layer.kind === "camera" && layer.sourceId === primaryCamera?.id) return false;
-      return !(session.current?.hasLayerSource(layer.sourceId ?? layer.id)
-        || (!layer.sourceId && !layer.assetId && metrics?.sources?.[layer.kind].live));
-    });
-    if (missing) {
-      setSelectedLayerId(missing.id);
-      setSourceLayerId(missing.id);
-      setSourcePicker(missing.kind === "camera" ? "camera" : "choose");
-      return;
-    }
-    const missingPrimaryCamera = appearance.layers.some(layer => layer.visible && layer.kind === "camera"
-      && layer.sourceId === primaryCamera?.id
-      && !session.current?.hasLayerSource(layer.sourceId ?? layer.id));
-    if (!preview || !matches || missingPrimaryCamera) {
-      if (
-        !(await prepare({
-          ...config,
-          source: diagnostic ? testSource : "camera",
-        }, true))
-      )
+    if (!session.current || busy || exporting || !project.id || recordingTelemetry.current.phase === 'starting' || recordingTelemetry.current.phase === 'recording') return;
+    const studio = session.current;
+    const ownerId = currentProject.current.id;
+    const sceneId = currentProject.current.selectedSceneId;
+    const account = getLocalAccount();
+    const attempt = new AbortController();
+    recordAttempt.current = attempt;
+    setRecordStartPending(true);
+    const valid = () => recordAttempt.current === attempt && !attempt.signal.aborted
+      && session.current === studio && getLocalAccount() === account
+      && currentProject.current.id === ownerId && currentProject.current.selectedSceneId === sceneId
+      && currentPage.current === "studio" && currentTab.current === "studio";
+    try {
+      const captureStarted = performance.now();
+      trackCreatorEvent('capture_requested', { ...recordingSettings(config), stage: 'record_intent' });
+      const missing = appearance.layers.find(layer => {
+        if (!layer.visible || (layer.kind !== "screen" && layer.kind !== "camera")) return false;
+        // Preparation can acquire the primary camera; additional sources need an explicit connection.
+        if (layer.kind === "camera" && layer.sourceId === primaryCamera?.id) return false;
+        return !(session.current?.hasLayerSource(layer.sourceId ?? layer.id)
+          || (!layer.sourceId && !layer.assetId && metrics?.sources?.[layer.kind].live));
+      });
+      if (missing) {
+        setSelectedLayerId(missing.id);
+        setSourceLayerId(missing.id);
+        setSourcePicker(missing.kind === "camera" ? "camera" : "choose");
         return;
-    } else {
-      trackCreatorEvent('capture_ready', { ...recordingSettings(config), stage: 'record_intent', duration_ms: elapsedRecordingOperation(captureStarted) });
+      }
+      const missingPrimaryCamera = appearance.layers.some(layer => layer.visible && layer.kind === "camera"
+        && layer.sourceId === primaryCamera?.id
+        && !session.current?.hasLayerSource(layer.sourceId ?? layer.id));
+      if (!preview || !matches || missingPrimaryCamera) {
+        if (
+          !(await prepare({
+            ...config,
+            source: diagnostic ? testSource : "camera",
+          }, true))
+        )
+          return;
+      } else {
+        trackCreatorEvent('capture_ready', { ...recordingSettings(config), stage: 'record_intent', duration_ms: elapsedRecordingOperation(captureStarted) });
+      }
+      if (!valid()) return;
+      // Permissions are requested by prepare() in the original click gesture,
+      // before waiting. No recorder or recording-start event exists during this wait.
+      for (const remaining of [3, 2, 1]) {
+        setRecordCountdown(remaining);
+        if (!(await countdownSecond(attempt.signal)) || !valid()) return;
+      }
+      setRecordCountdown(null);
+      if (valid()) {
+        recordAttempt.current = null;
+        setRecordStartPending(false);
+        await start();
+      }
+    } finally {
+      if (recordAttempt.current === attempt) {
+        recordAttempt.current = null;
+        setRecordStartPending(false);
+        setRecordCountdown(null);
+      }
     }
-    await start();
+  }
+  function cancelPendingRecording(update = true) {
+    recordAttempt.current?.abort();
+    recordAttempt.current = null;
+    if (update) {
+      setRecordStartPending(false);
+      setRecordCountdown(null);
+    }
+  }
+  useEffect(() => {
+    if (recordAttempt.current) cancelPendingRecording();
+  }, [page, tab, project.id, scene.id]);
+  useEffect(() => {
+    const cancel = () => cancelPendingRecording();
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !recordAttempt.current) return;
+      event.preventDefault();
+      cancelPendingRecording();
+    };
+    window.addEventListener("popstate", cancel);
+    window.addEventListener("hashchange", cancel);
+    window.addEventListener("pagehide", cancel);
+    window.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("popstate", cancel);
+      window.removeEventListener("hashchange", cancel);
+      window.removeEventListener("pagehide", cancel);
+      window.removeEventListener("keydown", escape);
+    };
+  }, []);
+  function remoteSnapshot() {
+    const studio = session.current;
+    return studioRemoteSnapshot(currentProject.current, studio?.getSnapshot(), {
+      available: page === "studio" && !!studio,
+      busy: transitioning || remoteCommandLock.current,
+      recordingStartPending: Boolean(recordAttempt.current),
+      matches,
+      exporting,
+      hasSource: id => studio?.hasLayerSource(id) === true,
+    });
+  }
+  async function executeRemote(command: RemoteCommand): Promise<RemoteCommandResult> {
+    if (command.type === "stopRecording" && recordAttempt.current) {
+      cancelPendingRecording();
+      return { ok: true };
+    }
+    const studio = session.current, owner = currentProject.current;
+    if (!studio || page !== "studio" || remoteCommandLock.current)
+      return { ok: false, error: "Abra o projeto no computador para usar o controle." };
+    const before = studio.getSnapshot();
+    if (transitioning || before.state === "preparing" || before.state === "stopping")
+      return { ok: false, error: "Aguarde o estúdio concluir a operação atual." };
+    remoteCommandLock.current = true;
+    try {
+      if (command.type === "startRecording") {
+        if (before.state !== "recording") {
+          const current = owner.scenes.find(item => item.id === owner.selectedSceneId);
+          if (!current || !matches || exporting || !["ready", "complete"].includes(before.state)
+            || !sceneSourcesReady(current, before, id => studio.hasLayerSource(id)))
+            throw new Error("Conecte e prepare as fontes no computador antes de gravar pelo celular.");
+          flushPendingProject();
+          await start();
+          if (studio.getSnapshot().state !== "recording") throw new Error("Não foi possível iniciar a gravação. Confira o computador.");
+        }
+      } else if (command.type === "stopRecording") {
+        if (before.state === "recording") await stop();
+      } else if (command.type === "selectScene") {
+        const target = owner.scenes.find(item => item.id === command.sceneId);
+        if (!target) throw new Error("Esta cena não está mais neste projeto.");
+        const visual = normalizeSceneAppearance(target.layout, target.appearance);
+        if (!["ready", "complete", "recording"].includes(before.state)
+          || !sceneSourcesReady({ ...target, appearance: visual }, before, id => studio.hasLayerSource(id))
+          || (before.config?.microphoneDeviceId ?? "") !== (visual.microphoneDeviceId ?? "")
+          || visual.layers.some(layer => layer.visible && layer.kind === "camera" && !layer.sourceId
+            && (before.config?.cameraDeviceId ?? "") !== (visual.cameraDeviceId ?? "")))
+          throw new Error("Conecte as fontes e os dispositivos desta cena no computador primeiro.");
+        if (!(await chooseScene(command.sceneId))) throw new Error("Não foi possível trocar a cena. Confira o computador.");
+      } else if (command.type === "setSourceVisible") {
+        const target = owner.scenes.find(item => item.id === command.sceneId);
+        const visual = target && normalizeSceneAppearance(target.layout, target.appearance);
+        const layer = visual?.layers.find(item => item.id === command.layerId);
+        if (!target || !visual || !layer) throw new Error("Esta fonte não está mais na cena.");
+        const changed = { ...visual, layers: visual.layers.map(item => item.id === command.layerId ? { ...item, visible: command.visible } : item) };
+        if (target.id === owner.selectedSceneId) {
+          if (command.visible && !sceneSourcesReady({ ...target, appearance: changed }, before, id => studio.hasLayerSource(id)))
+            throw new Error("Conecte esta fonte no computador antes de exibi-la.");
+          changeAppearance(changed);
+        } else update({ ...owner, scenes: owner.scenes.map(item => item.id === target.id ? { ...item, appearance: changed } : item) });
+        if (currentProject.current.scenes.find(item => item.id === target.id)?.appearance?.layers
+          .find(item => item.id === layer.id)?.visible !== command.visible)
+          throw new Error("Não foi possível salvar a visibilidade da fonte.");
+      } else if (command.type === "setMicrophoneMuted") {
+        const current = owner.scenes.find(item => item.id === owner.selectedSceneId);
+        if (!current) throw new Error("Esta cena não está mais neste projeto.");
+        changeAppearance({ ...normalizeSceneAppearance(current.layout, current.appearance), microphoneMuted: command.muted });
+      }
+      if (session.current !== studio || currentProject.current.id !== owner.id)
+        throw new Error("O projeto foi fechado no computador.");
+      return { ok: true };
+    } catch (failure) {
+      return { ok: false, error: message(failure) };
+    } finally { remoteCommandLock.current = false; }
   }
   function targetVisualLayer(
     requested: string | null,
@@ -1349,7 +1517,7 @@ export default function App() {
     } else {
       session.current?.setLayout(next.layout);
       session.current?.setSceneAppearance(visual);
-      session.current?.setCameraZoom(next.zoom ?? 1.6);
+      session.current?.setCameraZoom(next.zoom ?? 1.4);
     }
     update({ ...currentProject.current, selectedSceneId: id });
     setMuteNotice(false);
@@ -1712,7 +1880,7 @@ export default function App() {
     if (next.id === scene.id) {
       session.current?.setLayout(next.layout);
       session.current?.setSceneAppearance(next.appearance);
-      session.current?.setCameraZoom(next.zoom ?? 1.6);
+      session.current?.setCameraZoom(next.zoom ?? 1.4);
     }
     if (
       !existing &&
@@ -1942,13 +2110,15 @@ export default function App() {
     <Button
       variant="ghost"
       className={`button primary record-button ${recording ? "recording" : ""}`}
-      data-testid={recording ? "stop-recording" : "start-recording"}
-      disabled={!engineReady || transitioning || exporting}
-      aria-label={state === "stopping" ? "Salvando…" : working ? "Preparando…" : recording ? "Parar gravação" : "Gravar"}
-      title={recording ? "Parar gravação" : "Gravar"}
+      data-testid={recordStartPending ? "cancel-recording-start" : recording ? "stop-recording" : "start-recording"}
+      disabled={!recordStartPending && (!engineReady || transitioning || exporting)}
+      aria-label={recordStartPending ? "Cancelar início da gravação" : state === "stopping" ? "Salvando…" : working ? "Preparando…" : recording ? "Parar gravação" : "Gravar"}
+      title={recordStartPending ? "Cancelar início da gravação" : recording ? "Parar gravação" : "Gravar"}
       onClick={() => void recordAction()}
     >
-      {transitioning ? (
+      {recordStartPending ? (
+        <X size={16} />
+      ) : transitioning ? (
         <LoaderCircle className="spin" size={16} />
       ) : recording ? (
         <Square fill="currentColor" size={13} />
@@ -1956,7 +2126,9 @@ export default function App() {
         <span className="record-dot" />
       )}
       <span className="record-label">
-        {state === "stopping"
+        {recordStartPending
+          ? recordCountdown === null ? "Cancelar" : `Cancelar · ${recordCountdown}`
+          : state === "stopping"
           ? "Salvando…"
           : working
             ? "Preparando…"
@@ -2081,6 +2253,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <CloudRecordingStorage model={cloudLibrary} />
           <Tooltip
             content={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -2158,6 +2331,10 @@ export default function App() {
               </div>
             )}
             <div className="header-actions">
+              {page === "studio" && project.id && (
+                <RemoteControl key={`${userId}:${project.id}`} projectId={project.id} ownerId={userId ?? undefined}
+                  getSnapshot={remoteSnapshot} execute={executeRemote} />
+              )}
               {page === "studio" && tab === "studio" && recordButton}
               <IconButton
                 label="Buscar"
@@ -2203,7 +2380,6 @@ export default function App() {
               )}
             </div>
           )}
-          {(page === "projects" || (page === "studio" && tab === "recordings")) && <CloudRecordingStorage model={cloudLibrary} />}
           {page === "recording" && (activeTake && result ? (
             <RecordingDetail
               key={activeTake.id}
@@ -3284,6 +3460,7 @@ export default function App() {
           </section>
         </Modal>
       )}
+      <RecordingCountdown seconds={recordCountdown} onCancel={() => cancelPendingRecording()} />
       <CreatorFeedback available={!busy && !exporting && !working && !resultOpen && !settingsOpen && !technicalOpen && !sourcePicker && !projectEditor && !sceneEditor && !takeEditor && !deleteTarget && !searchOpen && page === 'studio'} userId={userId ?? null} />
     </div>
   );

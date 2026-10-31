@@ -7,11 +7,9 @@ import {
   ArrowLeft,
   ArrowDownToLine,
   BookmarkPlus,
-  Check,
   ChevronDown,
   Download,
   FileText,
-  Headphones,
   LoaderCircle,
   Maximize,
   Monitor,
@@ -38,7 +36,6 @@ import type { ProjectTake } from "../projects/store";
 import {
   deleteTranscript,
   exportTranscript,
-  importTranscriptFile,
   loadTranscript,
   saveTranscript,
   updateTranscriptCue,
@@ -49,6 +46,7 @@ import { Button } from "./ui/button";
 import { Input, Textarea } from "./ui/input";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 import { AlertDialog } from "./ui/alert-dialog";
 import {
   DropdownMenu,
@@ -58,9 +56,11 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Select } from "./Select";
-import { IconButton, Modal } from "./StudioUi";
+import { IconButton } from "./StudioUi";
 import {
-  approveCloudReplacement,
+  automaticTranscriptionAttempt,
+  claimAutomaticTranscription,
+  markAutomaticTranscription,
   clearCloudReplacement,
   deleteCloudTranscription,
   getCloudTranscription,
@@ -71,6 +71,8 @@ import {
   type CloudTranscription,
 } from "../recordings/cloudTranscription";
 import "./RecordingDetail.css";
+import { HotmartPublishDialog } from "./HotmartPublishDialog";
+import { hotmartResumeKey } from "./hotmartDraft";
 
 export interface RecordingDownloadState {
   busy?: boolean;
@@ -138,13 +140,15 @@ export function RecordingDetail({
   const mediaRenewing = useRef(false);
   const mediaRenewedAt = useRef(0);
   const [storedTranscriptVersion, setStoredTranscriptVersion] = useState<number | null>(null);
+  const [storedTranscriptLoaded, setStoredTranscriptLoaded] = useState(!take.cloud);
+  const [storedTranscriptError, setStoredTranscriptError] = useState("");
+  const [storedTranscriptReload, setStoredTranscriptReload] = useState(0);
   const [storedTranscriptStatus, setStoredTranscriptStatus] = useState("");
   const [savingStoredTranscript, setSavingStoredTranscript] = useState(false);
   const [error, setError] = useState("");
   const [dismissedDownloadError, setDismissedDownloadError] = useState("");
   const [transcript, setTranscript] = useState(() => loadTranscript(take.id));
   const [review, setReview] = useState(() => loadReview(take.id));
-  const [pendingImport, setPendingImport] = useState<Transcript | null>(null);
   const [removeTranscript, setRemoveTranscript] = useState(false);
   const [query, setQuery] = useState("");
   const [following, setFollowing] = useState(true);
@@ -153,16 +157,18 @@ export function RecordingDetail({
   );
   const [note, setNote] = useState("");
   const [leftTab, setLeftTab] = useState("transcript");
-  const [importing, setImporting] = useState(false);
   const [cloud, setCloud] = useState<CloudTranscription | null>(null);
   const [cloudError, setCloudError] = useState("");
   const [cloudUploadProgress, setCloudUploadProgress] = useState<number | null>(
     null,
   );
-  const [cloudDialog, setCloudDialog] = useState(false);
+  const [hotmartDialog, setHotmartDialog] = useState(false);
   const [removingTranscript, setRemovingTranscript] = useState(false);
   const [cancellingCloud, setCancellingCloud] = useState(false);
   const [cloudReload, setCloudReload] = useState(0);
+  const [automaticAttempt, setAutomaticAttempt] = useState(() => userId ? automaticTranscriptionAttempt(userId, take.id) : null);
+  const [automaticPending, setAutomaticPending] = useState(false);
+  const remoteSaveAttempt = useRef<string | null>(null);
   const cloudRequest = useRef<AbortController | null>(null);
   const cloudPoll = useRef<AbortController | null>(null);
   const cloudEpoch = useRef(0);
@@ -174,7 +180,6 @@ export function RecordingDetail({
   currentTranscript.current = transcript;
   const video = useRef<HTMLVideoElement>(null);
   const player = useRef<HTMLDivElement>(null);
-  const upload = useRef<HTMLInputElement>(null);
   const cueList = useRef<HTMLDivElement>(null);
   const activeCue = useRef<HTMLElement | null>(null);
   const positionRef = useRef(0);
@@ -188,6 +193,7 @@ export function RecordingDetail({
     download?.error !== dismissedDownloadError ? download?.error : "";
   const anyDownloadBusy = Object.values(downloads).some((item) => item.busy);
   const cloudBusy =
+    automaticPending ||
     cancellingCloud ||
     cloudUploadProgress !== null ||
     cloud?.status === "queued" ||
@@ -220,6 +226,14 @@ export function RecordingDetail({
     return grouped;
   }, [transcript]);
 
+  useEffect(() => {
+    if (!userId) return;
+    const key = hotmartResumeKey(userId, take.id);
+    if (sessionStorage.getItem(key) === "1") {
+      sessionStorage.removeItem(key);
+      setHotmartDialog(true);
+    }
+  }, [userId, take.id]);
   const currentCueId = transcript?.cues.find(
     (cue) => position >= cue.start && position < cue.end,
   )?.id;
@@ -244,19 +258,26 @@ export function RecordingDetail({
     void getStoredCloudTranscript(take.cloud.id, () => tokenGetter.current()).then(remote => {
       if (cancelled || !mounted.current) return;
       setStoredTranscriptVersion(remote.version);
+      setStoredTranscriptError("");
       if (remote.transcript && !currentTranscript.current) {
-        const saved = saveTranscript(take.id, remote.transcript);
-        currentTranscript.current = saved; setTranscript(saved);
-        setStoredTranscriptStatus('Transcrição recuperada da nuvem.');
+        currentTranscript.current = remote.transcript; setTranscript(remote.transcript);
+        try {
+          const saved = saveTranscript(take.id, remote.transcript);
+          currentTranscript.current = saved; setTranscript(saved);
+          setStoredTranscriptStatus('Transcrição recuperada da nuvem.');
+        } catch {
+          setStoredTranscriptStatus('Transcrição disponível na nuvem. Não foi possível salvar uma cópia neste dispositivo.');
+        }
       } else if (!remote.transcript) {
         setStoredTranscriptStatus(currentTranscript.current ? 'Transcrição salva apenas neste dispositivo.' : 'Sem transcrição na nuvem.');
       } else if (remote.transcript && currentTranscript.current) {
         const shape = (value: Transcript) => JSON.stringify({ ...value, updatedAt: 0 });
         setStoredTranscriptStatus(shape(remote.transcript) === shape(currentTranscript.current) ? 'Transcrição salva na nuvem.' : 'Sua versão local foi preservada. Envie-a para atualizar a cópia na nuvem.');
       }
-    }).catch(failure => { if (!cancelled && mounted.current) setStoredTranscriptStatus(failureMessage(failure)); });
+      setStoredTranscriptLoaded(true);
+    }).catch(failure => { if (!cancelled && mounted.current) { setStoredTranscriptLoaded(false); setStoredTranscriptError(failureMessage(failure)); setStoredTranscriptStatus(failureMessage(failure)); } });
     return () => { cancelled = true; };
-  }, [take.id, take.cloud?.id]);
+  }, [take.id, take.cloud?.id, storedTranscriptReload]);
   async function persistStoredTranscript(value = currentTranscript.current) {
     if (!take.cloud) return;
     if (savingStoredTranscript) throw new Error('Aguarde a transcrição terminar de salvar.');
@@ -318,14 +339,22 @@ export function RecordingDetail({
         if (
           next.status === "completed" &&
           next.transcript &&
+          storedTranscriptLoaded &&
+          !cancelRequested.current &&
+          !(userId && ["cancelled", "removed"].includes(automaticTranscriptionAttempt(userId, take.id) ?? "")) &&
           (!currentTranscript.current ||
             (userId &&
               shouldReplaceCloudTranscript(userId, take.id, next.jobId)))
         ) {
-          const saved = saveTranscript(take.id, next.transcript);
-          currentTranscript.current = saved;
-          setTranscript(saved);
+          let saved = next.transcript;
+          currentTranscript.current = saved; setTranscript(saved);
+          try { saved = saveTranscript(take.id, saved); currentTranscript.current = saved; setTranscript(saved); }
+          catch { setError("A transcrição está pronta, mas não foi possível salvá-la neste dispositivo."); }
           if (userId) clearCloudReplacement(userId, take.id);
+          if (take.cloud && remoteSaveAttempt.current !== next.jobId) {
+            remoteSaveAttempt.current = next.jobId ?? take.id;
+            void persistStoredTranscript(saved).catch(() => undefined);
+          }
         }
         if (next.status === "queued" || next.status === "processing")
           timer = setTimeout(refreshCloud, 5000);
@@ -348,11 +377,12 @@ export function RecordingDetail({
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [take.id, userId, cloudReload]);
+  }, [take.id, userId, cloudReload, storedTranscriptLoaded]);
 
   async function generateTranscript() {
-    if (!userId || cloudBusy) return;
-    setCloudDialog(false);
+    if (!userId || cloudRequest.current || cloudOperation.current || cancellingCloud || currentTranscript.current || !cloud?.configured || transcriptionTooLong || !storedTranscriptLoaded || storedTranscriptError) return;
+    markAutomaticTranscription(userId, take.id, "started");
+    setAutomaticAttempt("started");
     setCloudError("");
     setCloudUploadProgress(0);
     cloudEpoch.current++;
@@ -362,28 +392,16 @@ export function RecordingDetail({
     cloudRequest.current = controller;
     const operation = (async () => {
       if (cloud && ["completed", "error", "uploading"].includes(cloud.status))
-        await deleteCloudTranscription(
-          take.id,
-          () => tokenGetter.current(),
-          controller.signal,
-          userId,
-        );
+        await deleteCloudTranscription(take.id, () => tokenGetter.current(), controller.signal, userId);
       controller.signal.throwIfAborted();
-      approveCloudReplacement(userId, take.id);
-      const next = await startCloudTranscription({
+      return startCloudTranscription({
         recordingId: take.id,
         userId,
         file: await materializeRecordingFile(transcriptionFile, controller.signal, take.cloud ? { id: take.cloud.id, getToken: () => tokenGetter.current() } : undefined),
         getToken: () => tokenGetter.current(),
         signal: controller.signal,
-        onProgress: (percentage) => {
-          if (mounted.current && !cancelRequested.current)
-            setCloudUploadProgress(percentage);
-        },
+        onProgress: percentage => { if (mounted.current && !cancelRequested.current) setCloudUploadProgress(percentage); },
       });
-      if (!cancelRequested.current)
-        approveCloudReplacement(userId, take.id, next.jobId);
-      return next;
     })();
     cloudOperation.current = operation;
     try {
@@ -391,21 +409,39 @@ export function RecordingDetail({
       trackCreatorEvent('transcription_requested');
       if (!mounted.current || cancelRequested.current) return;
       setCloud(next);
-      setCloudReload((value) => value + 1);
-    } catch (error) {
-      if (!controller.signal.aborted) reportApplicationError(error, 'transcription');
-      if (mounted.current && !controller.signal.aborted)
-        setCloudError(failureMessage(error));
+      setCloudReload(value => value + 1);
+    } catch (failure) {
+      if (!controller.signal.aborted) reportApplicationError(failure, 'transcription');
+      if (mounted.current && !controller.signal.aborted) setCloudError(failureMessage(failure));
     } finally {
       if (mounted.current) setCloudUploadProgress(null);
       if (cloudRequest.current === controller) cloudRequest.current = null;
       if (cloudOperation.current === operation) cloudOperation.current = null;
     }
   }
+  useEffect(() => {
+    if (!userId || transcript || !storedTranscriptLoaded || !cloud?.configured || cloud.status !== "idle" || cloudError || storedTranscriptError || automaticAttempt || transcriptionTooLong || transcriptionFile.size > cloud.maxUploadBytes) return;
+    let cancelled = false;
+    setAutomaticPending(true);
+    void claimAutomaticTranscription(userId, take.id).then(claimed => {
+      if (cancelled || !mounted.current) return;
+      setAutomaticAttempt(automaticTranscriptionAttempt(userId, take.id));
+      if (claimed && !cancelRequested.current && !currentTranscript.current) void generateTranscript();
+    }).finally(() => { if (mounted.current) setAutomaticPending(false); });
+    return () => { cancelled = true; };
+  }, [take.id, userId, transcript, storedTranscriptLoaded, cloud?.configured, cloud?.status, cloudError, storedTranscriptError, automaticAttempt, transcriptionTooLong, transcriptionFile.size]);
+
+  function retryTranscription() {
+    if (!storedTranscriptLoaded || storedTranscriptError) setStoredTranscriptReload(value => value + 1);
+    if (!cloud?.configured || !storedTranscriptLoaded || storedTranscriptError) setCloudReload(value => value + 1);
+    else void generateTranscript();
+  }
 
   async function cancelTranscription() {
     if (cancellingCloud) return;
     cancelRequested.current = true;
+    if (userId) { markAutomaticTranscription(userId, take.id, "cancelled"); setAutomaticAttempt("cancelled"); }
+    setAutomaticPending(false);
     cloudEpoch.current++;
     cloudPoll.current?.abort();
     setCancellingCloud(true);
@@ -436,6 +472,7 @@ export function RecordingDetail({
     }
   }
   async function clearTranscript() {
+    if (userId) { markAutomaticTranscription(userId, take.id, "removed"); setAutomaticAttempt("removed"); }
     cloudEpoch.current++;
     cloudPoll.current?.abort();
     setRemovingTranscript(true);
@@ -527,23 +564,6 @@ export function RecordingDetail({
     setQuery("");
     setError("");
   }
-  async function importFile(fileToImport: File) {
-    setImporting(true);
-    setError("");
-    try {
-      const next = await importTranscriptFile(
-        fileToImport,
-        duration || undefined,
-      );
-      if (!mounted.current) return;
-      if (transcript) setPendingImport(next);
-      else persistTranscript(next);
-    } catch (error) {
-      if (mounted.current) setError(failureMessage(error));
-    } finally {
-      if (mounted.current) setImporting(false);
-    }
-  }
   function saveCorrection() {
     if (!transcript || !editing) return;
     try {
@@ -596,25 +616,29 @@ export function RecordingDetail({
     }
   }
 
+  const transcriptionProblem = cloudError || storedTranscriptError || (cloud?.status === "error" ? cloud.error || "Não foi possível transcrever esta gravação." : "");
+  const tooLarge = Boolean(cloud?.configured && transcriptionFile.size > cloud.maxUploadBytes);
+  const transcriptionLoading = cloudBusy || (!transcriptionProblem && !transcriptionTooLong && !tooLarge && (!cloud || !storedTranscriptLoaded || (cloud.configured && cloud.status === "idle" && !automaticAttempt)));
+  const transcriptionMessage = cancellingCloud ? "Cancelando transcrição…"
+    : cloudUploadProgress !== null ? `Enviando gravação · ${Math.round(cloudUploadProgress)}%`
+    : cloud?.status === "queued" ? "Na fila para transcrição…"
+    : cloud?.status === "processing" ? "Transcrevendo sua gravação…"
+    : transcriptionProblem || (transcriptionTooLong && cloud?.configured ? "Esta gravação excede o limite de duas horas para transcrição."
+      : tooLarge ? "Esta gravação excede o limite de tamanho para transcrição."
+      : cloud?.noSpeech ? "Nenhuma fala foi encontrada nesta gravação."
+      : cloud?.configured === false ? "Transcrição indisponível no momento."
+      : automaticAttempt === "cancelled" ? "Transcrição cancelada."
+      : automaticAttempt === "removed" ? "Sem transcrição."
+      : cloud?.status === "uploading" || automaticAttempt === "started" && cloud?.status === "idle" ? "A transcrição não foi concluída."
+      : "Preparando transcrição…");
+  const canRetryTranscription = !transcriptionLoading && !transcriptionTooLong && !tooLarge && !cloud?.noSpeech;
+
   return (
     <section
       className="recording-detail"
       aria-label={`Gravação ${take.name}`}
       data-testid="recording-detail"
     >
-      <Input
-        hidden
-        type="file"
-        ref={upload}
-        accept=".srt,.vtt"
-        data-testid="transcript-file-input"
-        aria-label="Importar arquivo de transcrição"
-        onChange={(event) => {
-          const selected = event.target.files?.[0];
-          event.target.value = "";
-          if (selected) void importFile(selected);
-        }}
-      />
       <header className="recording-detail-heading">
         <div className="recording-heading-title">
           <Button
@@ -627,10 +651,6 @@ export function RecordingDetail({
             <ArrowLeft size={19} />
           </Button>
           <div>
-            <p className="recording-breadcrumb">
-              {projectName}
-              <span>/</span>Gravações
-            </p>
             <h1>
               {take.name}
               <IconButton label="Renomear gravação" onClick={onRename}>
@@ -640,18 +660,12 @@ export function RecordingDetail({
           </div>
         </div>
         <div className="recording-heading-actions">
-          <span
-            className={`recording-saved ${editing ? "has-draft" : ""}`}
-            role="status"
-          >
-            <Check size={13} />
-            {editing ? "Correção não salva" : take.cloud ? "Backup na nuvem confirmado" : "Salvo neste navegador"}
-          </span>
+          {editing && <span className="recording-editing-status" role="status">Correção não salva</span>}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button disabled={anyDownloadBusy} aria-label="Baixar gravação">
+              <Button disabled={anyDownloadBusy} aria-label="Exportar gravação">
                 <Download size={15} />
-                {download?.busy ? download.label : "Baixar vídeo"}
+                {download?.busy ? download.label : "Exportar"}
                 <ChevronDown size={13} />
               </Button>
             </DropdownMenuTrigger>
@@ -659,6 +673,10 @@ export function RecordingDetail({
               <DropdownMenuItem onSelect={() => onDownload(file)}>
                 Baixar {orientation === "landscape" ? "horizontal" : "vertical"}{" "}
                 em MP4
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => { video.current?.pause(); setHotmartDialog(true); }}>
+                <Upload size={14} />
+                Enviar para a Hotmart
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
@@ -684,7 +702,7 @@ export function RecordingDetail({
         </div>
       </header>
       {storageActions}
-      {take.cloud && <div className="cloud-transcript-sync"><span role="status">{storedTranscriptStatus || 'Carregando transcrição da nuvem…'}</span>{transcript && <Button size="sm" variant="outline" disabled={savingStoredTranscript || storedTranscriptVersion === null || cloudBusy} onClick={() => void persistStoredTranscript().catch(() => undefined)}>{savingStoredTranscript ? 'Salvando…' : 'Salvar transcrição na nuvem'}</Button>}</div>}
+      {take.cloud && transcript && <div className="cloud-transcript-sync"><span role="status">{storedTranscriptStatus || 'Carregando transcrição da nuvem…'}</span>{transcript && <Button size="sm" variant="outline" disabled={savingStoredTranscript || storedTranscriptVersion === null || cloudBusy} onClick={() => void persistStoredTranscript().catch(() => undefined)}>{savingStoredTranscript ? 'Salvando…' : 'Salvar transcrição na nuvem'}</Button>}</div>}
       {(error || visibleDownloadError) && (
         <div className="recording-detail-error" role="alert">
           <span>{error || visibleDownloadError}</span>
@@ -700,434 +718,19 @@ export function RecordingDetail({
         </div>
       )}
       <div className="recording-editor-grid">
-        <Tabs
-          value={leftTab}
-          onValueChange={setLeftTab}
-          className="recording-transcript-pane"
-        >
-          <div className="recording-transcript-heading">
-            <TabsList
-              aria-label="Conteúdo da gravação"
-              className="recording-content-tabs"
-            >
-              <TabsTrigger value="transcript">
-                <FileText size={15} />
-                Transcrição
-              </TabsTrigger>
-              <TabsTrigger value="markers">
-                <BookmarkPlus size={15} />
-                Marcadores
-                {review.markers.length > 0 && (
-                  <span className="ui-tabs-count">{review.markers.length}</span>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <IconButton label="Opções da transcrição">
-                  <MoreHorizontal size={18} />
-                </IconButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={
-                    cloudBusy ||
-                    Boolean(editing) ||
-                    !cloud?.configured ||
-                    transcriptionTooLong
-                  }
-                  onSelect={() => setCloudDialog(true)}
-                >
-                  <Headphones size={14} />
-                  Gerar transcrição automática
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={importing || cloudBusy}
-                  onSelect={() => upload.current?.click()}
-                >
-                  <Upload size={14} />
-                  Importar SRT ou VTT
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={!transcript}
-                  onSelect={() => downloadTranscript("txt")}
-                >
-                  Baixar texto (.txt)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!transcript}
-                  onSelect={() => downloadTranscript("srt")}
-                >
-                  Baixar legendas (.srt)
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!transcript}
-                  onSelect={() => downloadTranscript("vtt")}
-                >
-                  Baixar legendas (.vtt)
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  destructive
-                  disabled={!transcript}
-                  onSelect={() => setRemoveTranscript(true)}
-                >
-                  Remover transcrição
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <TabsContent
-            value="transcript"
-            className="recording-transcript-content"
-          >
-            {(cloudBusy ||
-              cloudError ||
-              cloud?.status === "error" ||
-              cloud?.noSpeech) && (
-              <div className="cloud-transcription-status" role="status">
-                <div>
-                  {cloudBusy && <LoaderCircle className="spin" size={15} />}
-                  <p>
-                    {cancellingCloud
-                      ? "Cancelando transcrição…"
-                      : cloudUploadProgress !== null
-                        ? `Enviando gravação · ${Math.round(cloudUploadProgress)}%`
-                        : cloud?.status === "queued"
-                          ? "Na fila para transcrição…"
-                          : cloud?.status === "processing"
-                            ? "Transcrevendo sua gravação…"
-                            : cloud?.noSpeech
-                              ? "Nenhuma fala foi encontrada nesta gravação."
-                              : cloudError ||
-                                cloud?.error ||
-                                "Não foi possível transcrever. Tente novamente."}
-                  </p>
-                </div>
-                {cloudBusy ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={cancellingCloud}
-                    onClick={() => void cancelTranscription()}
-                  >
-                    Cancelar transcrição
-                  </Button>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setCloudReload((value) => value + 1)}
-                  >
-                    Verificar novamente
-                  </Button>
-                )}
-                {cloudBusy && (
-                  <span>
-                    Você pode continuar assistindo. O processamento continua
-                    após o envio, mesmo ao sair desta página.
-                  </span>
-                )}
-              </div>
-            )}
-            {transcript ? (
-              <>
-                <div className="transcript-search">
-                  <Search size={15} />
-                  <Input
-                    aria-label="Buscar na transcrição"
-                    placeholder="Buscar uma palavra ou ideia…"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                  {query && (
-                    <IconButton
-                      label="Limpar busca na transcrição"
-                      onClick={() => setQuery("")}
-                    >
-                      <X size={13} />
-                    </IconButton>
-                  )}
-                </div>
-                <div className="transcript-summary">
-                  <span>
-                    {query
-                      ? `${filteredCues.length} ${filteredCues.length === 1 ? "trecho encontrado" : "trechos encontrados"}`
-                      : `${transcript.cues.length} trechos · ${transcript.origin === "automatic" ? "transcrição automática" : "legenda importada"}`}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={following}
-                    onClick={() => setFollowing(!following)}
-                  >
-                    <ArrowDownToLine size={12} />
-                    Acompanhar
-                  </Button>
-                </div>
-                <div className="transcript-cues" ref={cueList}>
-                  {filteredCues.length === 0 && (
-                    <p className="transcript-no-results">
-                      Nenhum trecho encontrado. Tente outra palavra.
-                    </p>
-                  )}
-                  {filteredCues.map((cue) => (
-                    <article
-                      key={cue.id}
-                      data-testid="transcript-cue"
-                      className={`transcript-cue ${currentCueId === cue.id ? "is-current" : ""}`}
-                      ref={(element) => {
-                        if (currentCueId === cue.id)
-                          activeCue.current = element;
-                      }}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="transcript-cue-time"
-                        aria-label={`Ir para ${clock(cue.start)}`}
-                        onClick={() => seek(cue.start)}
-                      >
-                        {clock(cue.start)}
-                      </Button>
-                      {editing?.id === cue.id ? (
-                        <div className="transcript-correction">
-                          <Textarea
-                            autoFocus
-                            aria-label="Corrigir texto do trecho"
-                            value={editing.text}
-                            maxLength={10000}
-                            onChange={(event) =>
-                              setEditing({
-                                ...editing,
-                                text: event.target.value,
-                              })
-                            }
-                          />
-                          <p>A correção altera o texto e as legendas.</p>
-                          <div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditing(null)}
-                            >
-                              Cancelar
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={!editing.text.trim()}
-                              onClick={saveCorrection}
-                            >
-                              Salvar correção
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {wordsByCue.has(cue.id) ? (
-                            <p className="transcript-word-text">
-                              {wordsByCue.get(cue.id)!.map((word, index) => (
-                                <span key={word.id}>
-                                  <Button
-                                    variant="ghost"
-                                    className={`transcript-word ${position >= word.start && position < word.end ? "is-current-word" : ""}`}
-                                    aria-label={`Ir para palavra: ${word.text}`}
-                                    onClick={() => seek(word.start)}
-                                  >
-                                    <MatchedText
-                                      text={word.text}
-                                      query={query.trim()}
-                                    />
-                                  </Button>
-                                  {index < wordsByCue.get(cue.id)!.length - 1
-                                    ? " "
-                                    : ""}
-                                </span>
-                              ))}
-                            </p>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              className="transcript-cue-text"
-                              onClick={() => seek(cue.start)}
-                              aria-label={`Ir para trecho: ${cue.text}`}
-                            >
-                              <MatchedText
-                                text={cue.text}
-                                query={query.trim()}
-                              />
-                            </Button>
-                          )}
-                          <IconButton
-                            disabled={Boolean(editing) || cloudBusy}
-                            label={`Corrigir trecho em ${clock(cue.start)}`}
-                            className="transcript-cue-edit"
-                            onClick={() => {
-                              video.current?.pause();
-                              setEditing({ id: cue.id, text: cue.text });
-                            }}
-                          >
-                            <Pencil size={13} />
-                          </IconButton>
-                        </>
-                      )}
-                    </article>
-                  ))}
-                </div>
-                <footer className="transcript-footer">
-                  <span title={transcript.sourceName}>
-                    {transcript.sourceName}
-                  </span>
-                  <span>Clique em um trecho para ir ao vídeo.</span>
-                </footer>
-              </>
-            ) : (
-              <div className="transcript-empty">
-                <div className="transcript-empty-art" aria-hidden="true">
-                  <Headphones size={28} strokeWidth={1.3} />
-                  <div>
-                    {[10, 19, 28, 17, 34, 23, 13, 29, 21, 12, 25, 16].map(
-                      (height, index) => (
-                        <i key={index} style={{ height }} />
-                      ),
-                    )}
-                  </div>
-                </div>
-                <span className="recording-eyebrow">
-                  DO VÍDEO PARA AS PALAVRAS
-                </span>
-                <h2>
-                  Cada palavra,
-                  <br />
-                  no seu lugar.
-                </h2>
-                <p>
-                  Encontre uma ideia, acompanhe a fala e revise o texto sem sair
-                  do vídeo.
-                </p>
-                {cloud?.configured && (
-                  <Button
-                    disabled={cloudBusy || importing || transcriptionTooLong}
-                    onClick={() => setCloudDialog(true)}
-                  >
-                    <Headphones size={15} />
-                    {cloud?.status === "error"
-                      ? "Tentar transcrição novamente"
-                      : "Gerar transcrição"}
-                  </Button>
-                )}
-                <Button
-                  variant="secondary"
-                  disabled={importing || cloudBusy}
-                  onClick={() => upload.current?.click()}
-                >
-                  <Upload size={15} />
-                  {importing ? "Importando…" : "Importar transcrição"}
-                </Button>
-                <span className="transcript-import-formats">
-                  SRT ou VTT · até 5 MB
-                </span>
-                <div className="transcript-availability">
-                  <span />
-                  {transcriptionTooLong && cloud?.configured
-                    ? "A transcrição automática aceita gravações de até duas horas. Você pode importar uma legenda para este vídeo."
-                    : cloud?.configured
-                      ? "Gere a transcrição com envio seguro da gravação ou importe uma legenda que você já tem."
-                      : "A transcrição automática ainda não está disponível. Importe uma legenda para começar."}
-                </div>
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="markers" className="recording-markers-content">
-            <div className="recording-marker-intro">
-              <h2>Guarde os bons momentos.</h2>
-              <p>Marque ideias, ajustes e trechos para revisitar.</p>
-            </div>
-            <form
-              className="recording-marker-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                addMarker();
-              }}
-            >
-              <span>
-                Adicionar em <strong>{clock(position)}</strong>
-              </span>
-              <Textarea
-                aria-label="Nota do marcador"
-                placeholder="Uma boa abertura, um trecho para compartilhar…"
-                maxLength={1000}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-              />
-              <Button
-                type="submit"
-                size="sm"
-                variant="secondary"
-                disabled={!note.trim()}
-              >
-                <BookmarkPlus size={14} />
-                Adicionar marcador
-              </Button>
-            </form>
-            <div className="recording-marker-list">
-              {review.markers.length === 0 ? (
-                <p>Seus marcadores vão aparecer aqui.</p>
-              ) : (
-                review.markers.map((marker) => (
-                  <article key={marker.id}>
-                    <Button
-                      variant="ghost"
-                      className="recording-marker-seek"
-                      onClick={() => seek(marker.time)}
-                    >
-                      <span>{clock(marker.time)}</span>
-                      <p>{marker.text}</p>
-                    </Button>
-                    <IconButton
-                      label={`Excluir marcador em ${clock(marker.time)}`}
-                      onClick={() => {
-                        try {
-                          setReview(
-                            saveReview(take.id, {
-                              version: 1,
-                              markers: review.markers.filter(
-                                (item) => item.id !== marker.id,
-                              ),
-                            }),
-                          );
-                        } catch (error) {
-                          setError(failureMessage(error));
-                        }
-                      }}
-                    >
-                      <Trash2 size={13} />
-                    </IconButton>
-                  </article>
-                ))
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
         <div className="recording-video-pane">
           <div className="recording-video-heading">
-            <div>
-              <span className="recording-eyebrow">SUA GRAVAÇÃO</span>
-              <h2>Uma ideia. Dois formatos.</h2>
-            </div>
-            <Tabs value={orientation} onValueChange={changeOrientation}>
-              <TabsList aria-label="Formato do vídeo">
-                <TabsTrigger value="landscape">
+            <h2>Prévia</h2>
+            <ToggleGroup type="single" value={orientation} onValueChange={(value) => { if (value) changeOrientation(value); }} aria-label="Formato do vídeo" className="recording-orientation">
+                <ToggleGroupItem value="landscape" size="sm" aria-label="Horizontal">
                   <Monitor size={14} />
                   Horizontal
-                </TabsTrigger>
-                <TabsTrigger value="portrait">
+                </ToggleGroupItem>
+                <ToggleGroupItem value="portrait" size="sm" aria-label="Vertical">
                   <Smartphone size={14} />
                   Vertical
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+                </ToggleGroupItem>
+            </ToggleGroup>
           </div>
           <div className={`recording-player is-${orientation}`} ref={player}>
             <div className="recording-video-stage">
@@ -1180,11 +783,13 @@ export function RecordingDetail({
               />
               {!playing && !mediaError && (
                 <Button
+                  variant="secondary"
+                  size="icon"
                   className="recording-center-play"
                   aria-label="Reproduzir vídeo"
                   onClick={() => void togglePlayback()}
                 >
-                  <Play size={25} fill="currentColor" />
+                  <Play size={18} fill="currentColor" />
                 </Button>
               )}
               {mediaError && (
@@ -1234,6 +839,15 @@ export function RecordingDetail({
                   </IconButton>
                 </div>
                 <div>
+                  <IconButton
+                    label="Marcar momento"
+                    onClick={() => {
+                      video.current?.pause();
+                      setLeftTab("markers");
+                    }}
+                  >
+                    <BookmarkPlus size={16} />
+                  </IconButton>
                   <IconButton
                     label={muted ? "Ativar som do vídeo" : "Silenciar vídeo"}
                     onClick={() => setMuted(!muted)}
@@ -1292,35 +906,6 @@ export function RecordingDetail({
               {orientation === "landscape" ? "16:9" : "9:16"}
             </span>
           </div>
-          <div className="recording-review-hint">
-            <BookmarkPlus size={18} />
-            <div>
-              <h3>Encontrou um momento que vale guardar?</h3>
-              <p>
-                Adicione um marcador e volte direto para ele quando precisar.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                video.current?.pause();
-                setLeftTab("markers");
-              }}
-            >
-              Marcar momento
-            </Button>
-          </div>
-          <div className="recording-detail-footnote">
-            <span>
-              <Check size={12} />
-              Dois formatos salvos
-            </span>
-            <p>
-              As correções da transcrição aparecem nas legendas exportadas. O
-              vídeo mantém a gravação original.
-            </p>
-          </div>
           {result.warnings.length > 0 && (
             <details className="recording-detail-warnings">
               <summary>Detalhes da gravação</summary>
@@ -1330,66 +915,315 @@ export function RecordingDetail({
             </details>
           )}
         </div>
-      </div>
-      {cloudDialog && (
-        <Modal
-          title="Transcrever gravação"
-          description="Sua gravação será enviada para transcrição."
-          onClose={() => setCloudDialog(false)}
+        <Tabs
+          value={leftTab}
+          onValueChange={setLeftTab}
+          className="recording-transcript-pane"
         >
-          <div className="cloud-transcription-disclosure">
-            <p>
-              Vamos enviar um dos formatos da gravação (
-              {(transcriptionFile.size / 1024 / 1024).toFixed(1)} MB) para
-              processamento pela AssemblyAI. A transcrição inclui os tempos das
-              palavras.
-            </p>
-            <p>
-              Nesta versão, aceitamos gravações de até duas horas e 512 MB. O
-              serviço processa até as primeiras duas horas de áudio.
-            </p>
-            <p>
-              A cópia temporária fica em armazenamento privado e a exclusão é
-              solicitada ao concluir ou cancelar. Envios abandonados são
-              removidos pela limpeza programada.
-            </p>
-            {transcript && (
-              <p>
-                O texto atual será substituído quando a nova transcrição ficar
-                pronta.
-              </p>
-            )}
-            <Button
-              disabled={!cloud?.configured || cloudBusy || transcriptionTooLong}
-              onClick={() => void generateTranscript()}
+          <div className="recording-transcript-heading">
+            <TabsList
+              aria-label="Conteúdo da gravação"
+              className="recording-content-tabs"
             >
-              <Headphones size={15} />
-              Enviar e transcrever
-            </Button>
+              <TabsTrigger value="transcript">
+                <FileText size={15} />
+                Transcrição
+              </TabsTrigger>
+              <TabsTrigger value="markers">
+                <BookmarkPlus size={15} />
+                Marcadores
+                {review.markers.length > 0 && (
+                  <span className="ui-tabs-count">{review.markers.length}</span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            {transcript && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton label="Opções da transcrição">
+                  <MoreHorizontal size={18} />
+                </IconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={!transcript}
+                  onSelect={() => downloadTranscript("txt")}
+                >
+                  Baixar texto (.txt)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!transcript}
+                  onSelect={() => downloadTranscript("srt")}
+                >
+                  Baixar legendas (.srt)
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!transcript}
+                  onSelect={() => downloadTranscript("vtt")}
+                >
+                  Baixar legendas (.vtt)
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  destructive
+                  disabled={!transcript}
+                  onSelect={() => setRemoveTranscript(true)}
+                >
+                  Remover transcrição
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            )}
           </div>
-        </Modal>
-      )}
-      {pendingImport && (
-        <AlertDialog
-          onClose={() => setPendingImport(null)}
-          title="Substituir a transcrição?"
-          description="A legenda importada vai substituir o texto atual e suas correções nesta gravação."
-          actionLabel="Substituir transcrição"
-          onConfirm={() => {
-            try {
-              persistTranscript(pendingImport);
-              setPendingImport(null);
-            } catch (error) {
-              setError(failureMessage(error));
-            }
+          <TabsContent
+            value="transcript"
+            className="recording-transcript-content"
+          >
+            {(!transcript || cloudBusy || cloudError || storedTranscriptError || cloud?.status === "error") && (
+              <div className={`cloud-transcription-status ${transcript ? "" : "is-empty"}`} role={transcriptionProblem ? "alert" : "status"} data-testid="transcription-status">
+                <div>{transcriptionLoading && <LoaderCircle className="spin" size={16} />}<p>{transcriptionMessage}</p></div>
+                {cloudBusy ? <Button variant="ghost" className="button secondary" disabled={cancellingCloud} onClick={() => void cancelTranscription()}>Cancelar transcrição</Button>
+                  : canRetryTranscription && <Button variant="ghost" className="button secondary" onClick={retryTranscription}>{cloud?.configured && storedTranscriptLoaded ? "Tentar novamente" : "Verificar novamente"}</Button>}
+              </div>
+            )}
+            {transcript ? (
+              <>
+                <div className="transcript-search">
+                  <Search size={15} />
+                  <Input
+                    aria-label="Buscar na transcrição"
+                    placeholder="Buscar uma palavra ou ideia…"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                  {query && (
+                    <IconButton
+                      label="Limpar busca na transcrição"
+                      onClick={() => setQuery("")}
+                    >
+                      <X size={13} />
+                    </IconButton>
+                  )}
+                </div>
+                <div className="transcript-summary">
+                  <span>
+                    {query
+                      ? `${filteredCues.length} ${filteredCues.length === 1 ? "trecho encontrado" : "trechos encontrados"}`
+                      : `${transcript.cues.length} trechos`}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={following}
+                    onClick={() => setFollowing(!following)}
+                  >
+                    <ArrowDownToLine size={12} />
+                    Acompanhar
+                  </Button>
+                </div>
+                <div className="transcript-cues" ref={cueList}>
+                  {filteredCues.length === 0 && (
+                    <p className="transcript-no-results">
+                      Nenhum trecho encontrado. Tente outra palavra.
+                    </p>
+                  )}
+                  {filteredCues.map((cue) => (
+                    <article
+                      key={cue.id}
+                      data-testid="transcript-cue"
+                      className={`transcript-cue ${currentCueId === cue.id ? "is-current" : ""}`}
+                      ref={(element) => {
+                        if (currentCueId === cue.id)
+                          activeCue.current = element;
+                      }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="transcript-cue-time"
+                        aria-label={`Ir para ${clock(cue.start)}`}
+                        onClick={() => seek(cue.start)}
+                      >
+                        {clock(cue.start)}
+                      </Button>
+                      {editing?.id === cue.id ? (
+                        <div className="transcript-correction">
+                          <Textarea
+                            autoFocus
+                            aria-label="Corrigir texto do trecho"
+                            value={editing.text}
+                            maxLength={10000}
+                            onChange={(event) =>
+                              setEditing({
+                                ...editing,
+                                text: event.target.value,
+                              })
+                            }
+                          />
+                          <div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditing(null)}
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={!editing.text.trim()}
+                              onClick={saveCorrection}
+                            >
+                              Salvar correção
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {wordsByCue.has(cue.id) ? (
+                            <p className="transcript-word-text">
+                              {wordsByCue.get(cue.id)!.map((word, index) => (
+                                <span key={word.id}>
+                                  <button
+                                    type="button"
+                                    className={`transcript-word ${position >= word.start && position < word.end ? "is-current-word" : ""}`}
+                                    aria-label={`Ir para palavra: ${word.text}`}
+                                    onClick={() => seek(word.start)}
+                                  >
+                                    <MatchedText
+                                      text={word.text}
+                                      query={query.trim()}
+                                    />
+                                  </button>
+                                  {index < wordsByCue.get(cue.id)!.length - 1
+                                    ? " "
+                                    : ""}
+                                </span>
+                              ))}
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              className="transcript-cue-text"
+                              onClick={() => seek(cue.start)}
+                              aria-label={`Ir para trecho: ${cue.text}`}
+                            >
+                              <MatchedText
+                                text={cue.text}
+                                query={query.trim()}
+                              />
+                            </button>
+                          )}
+                          <IconButton
+                            disabled={Boolean(editing) || cloudBusy}
+                            label={`Corrigir trecho em ${clock(cue.start)}`}
+                            className="transcript-cue-edit"
+                            onClick={() => {
+                              video.current?.pause();
+                              setEditing({ id: cue.id, text: cue.text });
+                            }}
+                          >
+                            <Pencil size={13} />
+                          </IconButton>
+                        </>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : (
+              null
+            )}
+          </TabsContent>
+          <TabsContent value="markers" className="recording-markers-content">
+            <form
+              className="recording-marker-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                addMarker();
+              }}
+            >
+              <span>
+                Adicionar em <strong>{clock(position)}</strong>
+              </span>
+              <Textarea
+                aria-label="Nota do marcador"
+                placeholder="O que você quer lembrar deste trecho?"
+                maxLength={1000}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="secondary"
+                disabled={!note.trim()}
+              >
+                <BookmarkPlus size={14} />
+                Adicionar marcador
+              </Button>
+            </form>
+            <div className="recording-marker-list">
+              {review.markers.length === 0 ? (
+                <p>Seus marcadores vão aparecer aqui.</p>
+              ) : (
+                review.markers.map((marker) => (
+                  <article key={marker.id}>
+                    <Button
+                      variant="ghost"
+                      className="recording-marker-seek"
+                      onClick={() => seek(marker.time)}
+                    >
+                      <span>{clock(marker.time)}</span>
+                      <p>{marker.text}</p>
+                    </Button>
+                    <IconButton
+                      label={`Excluir marcador em ${clock(marker.time)}`}
+                      onClick={() => {
+                        try {
+                          setReview(
+                            saveReview(take.id, {
+                              version: 1,
+                              markers: review.markers.filter(
+                                (item) => item.id !== marker.id,
+                              ),
+                            }),
+                          );
+                        } catch (error) {
+                          setError(failureMessage(error));
+                        }
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </IconButton>
+                  </article>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+      {hotmartDialog && userId && (
+        <HotmartPublishDialog
+          recordingId={take.id}
+          cloudRecordingId={take.cloud?.id}
+          recordingName={take.name}
+          projectName={projectName}
+          result={result}
+          initialOrientation={orientation}
+          preparedFiles={{
+            landscape: downloads[`${take.id}-landscape`]?.file,
+            portrait: downloads[`${take.id}-portrait`]?.file,
           }}
+          getToken={getToken}
+          ownerId={userId}
+          onClose={() => setHotmartDialog(false)}
         />
       )}
       {removeTranscript && (
         <AlertDialog
           onClose={() => setRemoveTranscript(false)}
           title="Remover a transcrição?"
-          description={take.cloud ? "O texto e suas correções serão removidos deste dispositivo e da cópia na nuvem. Você pode importar a legenda novamente." : "O texto e suas correções serão removidos deste navegador. Você pode importar a legenda novamente."}
+          description={take.cloud ? "O texto e suas correções serão removidos deste dispositivo e da cópia na nuvem." : "O texto e suas correções serão removidos deste navegador."}
           actionLabel="Remover transcrição"
           pending={removingTranscript}
           onConfirm={() => void clearTranscript()}

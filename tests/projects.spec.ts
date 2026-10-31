@@ -44,6 +44,36 @@ test('projects migrate old scenes and keep settings independent after reload', a
   expect(after.active).toBe(second.id);
 });
 
+test('presentation fade defaults to on and preserves scene and camera overrides after reload', async ({ page }) => {
+  await page.goto('/projects-storage-fixture');
+  const before = await page.evaluate(async () => {
+    localStorage.clear();
+    const store = await import('/src/projects/store.ts');
+    const cameraOverride = store.createProject('Borda da câmera');
+    const cameraScene = cameraOverride.scenes.find(scene => scene.layout === 'screen-3d')!;
+    const defaults = { presentation: cameraScene.appearance!.cameraFade, camera: cameraOverride.scenes.find(scene => scene.layout === 'camera')!.appearance!.cameraFade };
+    cameraScene.appearance!.layers.find(layer => layer.kind === 'camera')!.cameraFade = false;
+    store.saveProject(cameraOverride);
+    const sceneOverride = store.createProject('Borda da cena');
+    sceneOverride.scenes.find(scene => scene.layout === 'screen-3d')!.appearance!.cameraFade = false;
+    store.saveProject(sceneOverride);
+    const fresh = store.createProject('Nova apresentação');
+    return { defaults, cameraId: cameraOverride.id, sceneId: sceneOverride.id, freshId: fresh.id };
+  });
+  expect(before.defaults).toEqual({ presentation: true, camera: false });
+  await page.reload();
+  const after = await page.evaluate(async () => {
+    const store = await import('/src/projects/store.ts');
+    return store.loadProjects().map(project => {
+      const appearance = project.scenes.find(scene => scene.layout === 'screen-3d')!.appearance!;
+      return { id: project.id, sceneFade: appearance.cameraFade, cameraFade: appearance.layers.find(layer => layer.kind === 'camera')!.cameraFade };
+    });
+  });
+  expect(after.find(project => project.id === before.cameraId)).toMatchObject({ sceneFade: true, cameraFade: false });
+  expect(after.find(project => project.id === before.sceneId)).toMatchObject({ sceneFade: false });
+  expect(after.find(project => project.id === before.freshId)).toMatchObject({ sceneFade: true });
+});
+
 for (const backend of ['opfs', 'indexeddb'] as const) {
   test(`${backend} recordings reopen after reload and deleting a project preserves other videos`, async ({ page }) => {
     await page.goto('/projects-storage-fixture');

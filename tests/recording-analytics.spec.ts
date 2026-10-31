@@ -126,13 +126,13 @@ test('detail original downloads remain measured when compatible export fails', a
   await openRecordingLibrary(page, seeded.projectId);
   await openRecordingDetail(page);
   for (const label of ['Original horizontal', 'Original vertical']) {
-    await page.getByRole('button', { name: 'Baixar gravação' }).click();
+    await page.getByRole('button', { name: 'Exportar gravação' }).click();
     const download = page.waitForEvent('download');
     await page.getByRole('menuitem', { name: label, exact: true }).click();
     await download;
   }
   await page.route('**/export/ffmpeg-core.js', route => route.abort());
-  await page.getByRole('button', { name: 'Baixar gravação' }).click();
+  await page.getByRole('button', { name: 'Exportar gravação' }).click();
   await page.getByRole('menuitem', { name: /Baixar horizontal em MP4/ }).click();
   await expect(page.locator('.recording-detail-error')).toBeVisible();
   await flushAnalytics(page);

@@ -1,0 +1,144 @@
+.studio-modal.hotmart-publish-dialog {
+  width: min(640px, calc(100vw - 48px));
+  max-width: 640px;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.hotmart-publish-dialog > .modal-header { flex: 0 0 auto; }
+.hotmart-publish-dialog > .modal-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  padding: 0;
+}
+.hotmart-publish {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  color: var(--ui-foreground);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hotmart-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 25px 24px;
+  overscroll-behavior: contain;
+}
+.hotmart-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ui-border);
+  margin-bottom: 20px;
+}
+.hotmart-account > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+.hotmart-account > span > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hotmart-account svg { flex-shrink: 0; }
+.hotmart-recording-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 20px;
+}
+.hotmart-recording-context > svg { color: var(--ui-muted); flex-shrink: 0; }
+.hotmart-recording-context > div { display: grid; gap: 2px; min-width: 0; }
+.hotmart-recording-context strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+}
+.hotmart-recording-context span { color: var(--ui-muted); font-size: 12px; }
+.hotmart-format-field { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.hotmart-format-toggle { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius); }
+.hotmart-destination-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 16px; margin-bottom: 24px; }
+.hotmart-fields { display: grid; gap: 20px; }
+.hotmart-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hotmart-field-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-top: -4px; }
+.hotmart-label { color: var(--ui-foreground); font-size: 12px; font-weight: 500; }
+.hotmart-optional { color: var(--ui-muted); font-weight: 400; margin-left: 6px; }
+.hotmart-help { color: var(--ui-muted); font-size: 12px; line-height: 1.6; margin: 0; }
+.hotmart-field > .gs-select-trigger { width: 100%; }
+.hotmart-field > .ui-input { box-sizing: border-box; }
+.hotmart-empty-module { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 0 20px; color: var(--ui-muted); }
+.hotmart-empty-module > p { flex: 1; margin: 0; }
+.hotmart-subview-nav { margin: -3px 0 20px -10px; }
+.hotmart-management-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.hotmart-management-heading > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.hotmart-modules { border: 1px solid var(--ui-border); border-radius: var(--ui-radius); overflow: hidden; }
+.hotmart-module + .hotmart-module { border-top: 1px solid var(--ui-border); }
+.hotmart-module.is-selected { background: var(--ui-input); }
+.hotmart-module-row { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 6px 8px; }
+.hotmart-module-select { flex: 1; justify-content: flex-start; min-width: 0; }
+.hotmart-module-select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hotmart-module-select > svg:last-child { margin-left: auto; }
+.hotmart-module-count { color: var(--ui-muted); font-size: 12px; white-space: nowrap; margin-inline: 4px; }
+.hotmart-lessons { display: grid; gap: 12px; list-style: none; margin: 0; padding: 8px 16px 16px 44px; }
+.hotmart-lessons li { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ui-muted); font-size: 12px; }
+.hotmart-lessons li > svg { flex: 0 0 auto; }
+.hotmart-lessons li > span:first-of-type { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.hotmart-publish-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--ui-border);
+  padding: 16px 25px;
+  background: var(--ui-background);
+}
+.hotmart-error {
+  padding: 12px 14px;
+  margin-top: 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  background: var(--ui-input);
+  color: var(--ui-foreground);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.hotmart-progress { display: grid; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--ui-border); }
+.hotmart-progress > div { display: flex; align-items: center; gap: 8px; }
+.hotmart-progress-value { margin-left: auto; color: var(--ui-muted); font-size: 12px; }
+.hotmart-progress progress { display: block; width: 100%; height: 5px; overflow: hidden; border: 0; border-radius: var(--ui-radius); accent-color: var(--ui-primary); }
+.hotmart-progress progress::-webkit-progress-bar { background: var(--ui-border); }
+.hotmart-progress progress::-webkit-progress-value { background: var(--ui-primary); }
+.hotmart-loading { display: flex; align-items: center; gap: 10px; min-height: 180px; color: var(--ui-muted); }
+.hotmart-connection { display: grid; gap: 20px; padding: 4px 0 8px; }
+.hotmart-connection > p { margin: 0; }
+.hotmart-connection .hotmart-recording-context { margin: 0; padding-block: 16px; border-block: 1px solid var(--ui-border); }
+.hotmart-connection .hotmart-error { margin-top: 0; }
+.hotmart-connection > .ui-button { justify-self: start; }
+.hotmart-result { display: grid; justify-items: start; gap: 16px; padding: 8px 0 12px; }
+.hotmart-result > h3 { margin: 0; font-size: 16px; font-weight: 500; }
+.hotmart-result > p { margin: 0; color: var(--ui-muted); }
+.hotmart-result strong { color: var(--ui-foreground); font-weight: 500; }
+@media (max-width: 600px) {
+  .studio-modal.hotmart-publish-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .hotmart-dialog-body { padding-inline: 20px; }
+  .hotmart-destination-fields { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .hotmart-format-field { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .hotmart-publish-footer { padding-inline: 20px; flex-wrap: wrap; }
+  .hotmart-management-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .hotmart-module-count { display: none; }
+}

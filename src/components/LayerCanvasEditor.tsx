@@ -191,10 +191,34 @@ export function LayerCanvasEditor({
         layer?.kind === "camera" &&
         (layer.cameraShape ?? currentProps.current.appearance.cameraShape) ===
           "circle";
-      if (circle || (event.shiftKey && (west || east) && (north || south))) {
-        const ratio = active.frame.width / active.frame.height;
-        if (west || east) frame.height = Math.max(0.02, frame.width) / ratio;
-        else frame.width = Math.max(0.02, frame.height) * ratio;
+      const corner = (west || east) && (north || south);
+      if (circle || (corner && !event.shiftKey)) {
+        const initial = active.frame;
+        const horizontalScale = frame.width / initial.width;
+        const verticalScale = frame.height / initial.height;
+        // Follow the axis whose proportional change is largest, so either a
+        // horizontal or a vertical corner drag responds without stretching.
+        const requestedScale = corner
+          ? Math.abs(horizontalScale - 1) >= Math.abs(verticalScale - 1)
+            ? horizontalScale : verticalScale
+          : west || east ? horizontalScale : verticalScale;
+        let minimumScale = Math.max(0.02 / initial.width, 0.02 / initial.height);
+        let maximumScale = Math.min(2 / initial.width, 2 / initial.height);
+        // Clamp one common scale, including the origin bounds, rather than
+        // clamping width and height independently and losing the ratio.
+        if (west) {
+          const right = initial.x + initial.width;
+          minimumScale = Math.max(minimumScale, (right - 1) / initial.width);
+          maximumScale = Math.min(maximumScale, (right + 1) / initial.width);
+        }
+        if (north) {
+          const bottom = initial.y + initial.height;
+          minimumScale = Math.max(minimumScale, (bottom - 1) / initial.height);
+          maximumScale = Math.min(maximumScale, (bottom + 1) / initial.height);
+        }
+        const scale = clamp(requestedScale, minimumScale, maximumScale);
+        frame.width = initial.width * scale;
+        frame.height = initial.height * scale;
         if (west) frame.x = active.frame.x + active.frame.width - frame.width;
         else if (!east)
           frame.x = active.frame.x + (active.frame.width - frame.width) / 2;

@@ -74,7 +74,7 @@ const LAYOUTS = new Set(['camera', 'camera-zoom', 'screen', 'screen-3d', 'countd
 
 export const DEFAULT_PROJECT_SCENES: ProjectScene[] = [
   { id: 'camera', name: 'Principal', layout: 'camera', appearance: defaultSceneAppearance('camera') },
-  { id: 'camera-zoom', name: 'Câmera com zoom', layout: 'camera-zoom', zoom: 1.6, appearance: defaultSceneAppearance('camera-zoom') },
+  { id: 'camera-zoom', name: 'Câmera com zoom', layout: 'camera-zoom', zoom: 1.4, appearance: defaultSceneAppearance('camera-zoom') },
   { id: 'screen', name: 'Câmera + tela', layout: 'screen', appearance: defaultSceneAppearance('screen') },
   { id: 'screen-3d', name: 'Apresentação', layout: 'screen-3d', appearance: defaultSceneAppearance('screen-3d') },
   { id: 'countdown', name: 'Começando em breve', layout: 'countdown', appearance: defaultSceneAppearance('countdown') },

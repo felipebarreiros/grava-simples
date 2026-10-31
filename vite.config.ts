@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { hotmartApi } from './server/hotmart/vite.ts';
 
 const headers = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -33,8 +34,9 @@ function sourceArchives(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [sourceArchives(), react()],
-  server: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: true, headers },
+  plugins: [sourceArchives(), hotmartApi(), react()],
+  optimizeDeps: { entries: ['index.html'] },
+  server: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: true, headers, watch: { ignored: ['**/.context/**'] } },
   preview: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: true, headers },
   build: { target: 'es2022', sourcemap: 'hidden' },
 });

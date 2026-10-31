@@ -29,6 +29,16 @@ and development notice. Review the complete login page and account dialog at
 desktop and 320/390px phone widths; passing color ratios alone does not establish
 readable sizing or visual consistency.
 
+## Recording review and course publishing
+
+Use the current `/app` studio and its live shared components as the visual reference. Older screenshots can show superseded navigation and control styles; capture the current interface before using screenshots to guide a change.
+
+Recording review keeps the video as the primary workspace, with transcription and markers in a right-side inspector. On narrow screens the video comes first. Use a compact recording title and one export menu beneath the existing project navigation. Avoid repeating project breadcrumbs, promotional headings, illustrated transcript empty states, or separate hint cards. Empty states explain the next useful action in one short sentence.
+
+Hotmart publishing uses the standard dialog surface and kit controls. Its main form contains the video format, destination, editable lesson details, publication choice, and one primary action. Course creation, members-area creation, and module management are focused views with a clear return to the upload draft. Module actions belong in shared menus. Keep draft creation and publication explicit.
+
+In both surfaces, inherit shared button and field typography, padding, corners, colors, and interaction states. Use the kit's neutral tokens and existing orange action color; do not add a separate brown/beige palette or resize controls with page-level CSS. Layout styles may arrange controls, but must not replace their kit appearance. Selection uses shared ToggleGroup or Select components.
+
 ## Navigation
 
 Collapsing the sidebar animates its width, preserves icon positions and row rhythm, and keeps every navigation action accessible. In the collapsed state, hover/focus reveals a tooltip with the full action/project name. The redundant local-storage caption is absent. Project actions remain available with three dots and right-click.
@@ -39,7 +49,9 @@ The selected scene owns microphone mute, gain, microphone choices, layers, text,
 
 Show available inputs under **Fontes do projeto** in the source picker. Reusing one changes only the selected layer's binding and preserves its geometry; adding another camera, screen/window or media file creates a distinct source. Reconnecting an offline source keeps its identity and updates every referencing scene. Multiple layers of one kind remain independently editable and may reuse the same source or select different sources. Source permissions are requested from user actions; an existing camera grant may be reused automatically without a new prompt. Saved source identities never authorize an automatic display chooser, and leaving the project releases its live captures.
 
-Layer order follows visual stacking. Pointer and keyboard sorting use dnd-kit; selecting a layer in the list selects it on the canvas and vice versa. The canvas editor displays selection/resize handles over the actual output, without recording those controls. Position and size are normalized and saved independently for horizontal and vertical output. Camera/screen proportions stay correct unless the user explicitly chooses a crop/shape.
+Layer order follows visual stacking. Pointer and keyboard sorting use dnd-kit; selecting a layer in the list selects it on the canvas and vice versa. The canvas editor displays selection/resize handles over the actual output, without recording those controls. Position and size are normalized and saved independently for horizontal and vertical output. Corner dragging preserves the layer's current proportions and anchors the opposite corner; holding Shift allows free stretching. Side handles resize their own axis, and circular cameras stay round. Size limits and drag cancellation preserve the same proportions and orientation isolation.
+
+Horizontal **Apresentação** cameras blend their left edge into the dark background by default. The **Suavizar borda** switch controls the selected camera's override. The soft gradient follows the camera frame and background color, keeping the presenter clear; portrait and full-camera scenes keep their existing framing. The fade must appear in thumbnails, previews and recorded output, using a cached gradient without another live-video copy or blur pass.
 
 ## Scene previews and countdown
 

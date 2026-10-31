@@ -97,7 +97,7 @@ export class StudioSession {
   private sceneBackgroundLoad = 0;
   private countdownRemainingMs = 300_000;
   private countdownStartedAt?: number;
-  private controls: StudioControls = { cameraZoom: 1.6, sourceVisibility: { camera: true, screen: true }, microphoneMuted: false, microphoneGainDb: 0 };
+  private controls: StudioControls = { cameraZoom: 1.4, sourceVisibility: { camera: true, screen: true }, microphoneMuted: false, microphoneGainDb: 0 };
   private error?: string;
   private result?: RecordingResult;
   private metrics: StudioMetrics = {
@@ -404,23 +404,23 @@ export class StudioSession {
   private syncLayerVisibility(): void {
     for (const kind of ['camera', 'screen'] as const) this.controls.sourceVisibility[kind] = this.sceneAppearance.layers.some(layer => layer.kind === kind && layer.visible);
   }
-  private visual(source: HTMLVideoElement | HTMLCanvasElement | undefined): SceneVisualSource | undefined {
+  private visual(source: HTMLVideoElement | HTMLCanvasElement | undefined, mirrorX = false): SceneVisualSource | undefined {
     if (!source) return undefined;
     const width = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
     const height = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
-    return width && height ? { element: source, width, height } : undefined;
+    return width && height ? { element: source, width, height, mirrorX: mirrorX && source instanceof HTMLVideoElement } : undefined;
   }
   renderSceneToCanvas(canvas: HTMLCanvasElement, options: ScenePreviewOptions): boolean {
     const context = canvas.getContext('2d', { alpha: false });
     if (!context) return false;
-    const camera = this.visual(this.camera);
+    const camera = this.visual(this.camera, true);
     const screen = this.config?.source !== 'camera' ? this.visual(this.source) : undefined;
     const layerSources = this.layerVisuals();
     if (options.layout !== 'countdown' && !camera && !screen && !Object.keys(layerSources).length && !options.appearance?.layers?.some(layer => layer.visible && (layer.kind === 'title' || layer.kind === 'timer' || layer.kind === 'background'))) return false;
     const appearance = normalizeSceneAppearance(options.layout, options.appearance);
     const activeBackground = appearance.backgroundAssetId === this.sceneBackgroundAssetId ? this.sceneBackground : undefined;
     this.compositor.render(context, canvas.width, canvas.height, {
-      layout: options.layout, appearance, zoom: options.zoom ?? 1.6,
+      layout: options.layout, appearance, zoom: options.zoom ?? 1.4,
       orientation: options.orientation ?? (canvas.width >= canvas.height ? 'landscape' : 'portrait'),
       remainingSeconds: options.layout === 'countdown' && this.config?.layout === 'countdown' ? this.getCountdownStatus(options.now).remainingSeconds : appearance.countdownSeconds,
       camera, screen, layerSources, background: options.background === undefined ? activeBackground : options.background, engine: this.engine,
@@ -435,12 +435,12 @@ export class StudioSession {
   private layerVisuals(): Record<string, SceneVisualSource> {
     const result: Record<string, SceneVisualSource> = {};
     if (this.cameraSourceId && this.getSourceStatus(this.cameraSourceId)?.live) {
-      const visual = this.visual(this.camera); if (visual) result[this.cameraSourceId] = visual;
+      const visual = this.visual(this.camera, true); if (visual) result[this.cameraSourceId] = visual;
     }
     if (this.screenSourceId && this.config?.source !== 'camera' && this.getSourceStatus(this.screenSourceId)?.live) {
       const visual = this.visual(this.source); if (visual) result[this.screenSourceId] = visual;
     }
-    for (const [id, entry] of this.layerInputs) { const visual = this.visual(entry.element); if (visual && (!entry.stream || entry.stream.getVideoTracks().some(track => track.readyState === 'live'))) result[id] = visual; }
+    for (const [id, entry] of this.layerInputs) { const visual = this.visual(entry.element, entry.kind === 'camera'); if (visual && (!entry.stream || entry.stream.getVideoTracks().some(track => track.readyState === 'live'))) result[id] = visual; }
     return result;
   }
   private inputStatus(source: HTMLVideoElement | HTMLCanvasElement | undefined, visible: boolean, label?: string): StudioSourceStatus {
@@ -1178,7 +1178,7 @@ export class StudioSession {
     this.nextDrawAt = force || now - this.nextDrawAt > frameDuration ? now + frameDuration : this.nextDrawAt + frameDuration;
     this.lastDraw = now;
     if (this.config.source === 'test' && this.testContexts) this.drawTestSources((now - this.renderStart) / 1000);
-    const camera = this.visual(this.camera), screen = this.config.source !== 'camera' ? this.visual(this.source) : undefined;
+    const camera = this.visual(this.camera, true), screen = this.config.source !== 'camera' ? this.visual(this.source) : undefined;
     const layout = this.config.layout ?? 'camera';
     const layerSources = this.layerVisuals();
     this.syncOutputSize(screen, layerSources);

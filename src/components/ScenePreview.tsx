@@ -27,7 +27,7 @@ export const ScenePreview = memo(function ScenePreview({
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
   const remainder = (seconds % 60).toString().padStart(2, "0");
   const zoom = scene.layout === "camera-zoom"
-    ? Math.max(1, Math.min(2.5, scene.zoom ?? 1.6)) : 1;
+    ? Math.max(1, Math.min(2.5, scene.zoom ?? 1.4)) : 1;
   const layers = appearance.layers.filter((layer) => layer.visible);
 
   return (
@@ -94,6 +94,10 @@ export const ScenePreview = memo(function ScenePreview({
               : shape === "rounded" ? Math.min(w, h) * .13 : 0;
             const border = (layer.cameraBorderWidth ?? appearance.cameraBorderWidth) / 8;
             const shadow = layer.cameraShadow ?? appearance.cameraShadow;
+            const fade = scene.layout === "screen-3d" && shape !== "circle"
+              && (layer.cameraFade ?? appearance.cameraFade ?? true);
+            const fadeColor = layers.slice(0, index).reverse().find(item => item.kind === "background")?.color
+              ?? appearance.backgroundColor;
             const defaultPresentationCamera = scene.layout === "screen-3d"
               && !layer.frames?.landscape
               && appearance.layers.find(item => item.kind === "camera")?.id === layer.id;
@@ -105,6 +109,15 @@ export const ScenePreview = memo(function ScenePreview({
                   <clipPath id={id}>
                     <rect x={x} y={y} width={w} height={h} rx={radius} />
                   </clipPath>
+                  {fade && (
+                    <linearGradient id={`${id}-camera-fade`} gradientUnits="userSpaceOnUse"
+                      x1={x} y1={y} x2={x + w * .22} y2={y}>
+                      <stop offset="0" stopColor={fadeColor} stopOpacity="1" />
+                      <stop offset=".35" stopColor={fadeColor} stopOpacity=".55" />
+                      <stop offset=".7" stopColor={fadeColor} stopOpacity=".15" />
+                      <stop offset="1" stopColor={fadeColor} stopOpacity="0" />
+                    </linearGradient>
+                  )}
                 </defs>
                 {(inset || shadow) && (
                   <rect x={x - 1} y={y + 1} width={w + 2} height={h + 2}
@@ -118,6 +131,10 @@ export const ScenePreview = memo(function ScenePreview({
                     width={scaledWidth} height={scaledHeight}
                     preserveAspectRatio={layer.fit === "contain" && shape !== "circle" ? "xMidYMid meet" : "xMidYMid slice"}
                     data-preview-zoom={zoom} />
+                  {fade && (
+                    <rect x={x} y={y} width={w * .22} height={h}
+                      fill={`url(#${id}-camera-fade)`} data-preview-camera-fade="true" />
+                  )}
                 </g>
                 {(inset || border > 0) && (
                   <rect x={x} y={y} width={w} height={h} rx={radius}

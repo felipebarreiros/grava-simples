@@ -25,6 +25,7 @@ export interface SceneLayer {
   cameraBorderColor?: string;
   cameraBorderWidth?: number;
   cameraShadow?: boolean;
+  cameraFade?: boolean;
 }
 export interface SceneAppearance {
   /** Bottom-to-top paint order. A missing layer is not rendered. */
@@ -33,6 +34,7 @@ export interface SceneAppearance {
   cameraBorderColor: string;
   cameraBorderWidth: number;
   cameraShadow: boolean;
+  cameraFade?: boolean;
   backgroundColor: string;
   backgroundAssetId?: string;
   productTitle: string;

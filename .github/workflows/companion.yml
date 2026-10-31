@@ -1,0 +1,51 @@
+name: Local Wi-Fi companion
+
+on:
+  pull_request:
+    paths:
+      - 'companion/**'
+      - 'src/remote/**'
+      - 'scripts/build-companion.mjs'
+      - '.github/workflows/companion.yml'
+  push:
+    branches: [main, felipebarreiros/obs-web-port-evaluation]
+    paths:
+      - 'companion/**'
+      - 'src/remote/**'
+      - 'scripts/build-companion.mjs'
+      - '.github/workflows/companion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: companion/go.mod
+          cache-dependency-path: companion/go.sum
+      - name: Exercise local pairing and WebSocket control
+        working-directory: companion
+        run: go test -count=1 ./...
+      - name: Build and execute the native helper
+        shell: bash
+        working-directory: companion
+        run: |
+          go build -trimpath -o "$RUNNER_TEMP/gravasimples-smoke.exe" .
+          "$RUNNER_TEMP/gravasimples-smoke.exe" --version

@@ -7,7 +7,7 @@ const color = (value: unknown, fallback: string) => typeof value === 'string' &&
 const finite = (value: unknown, fallback: number, min: number, max: number) => typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 export function defaultSceneAppearance(layout: StudioLayout): SceneAppearance {
   const ordered: SceneLayerKind[] = layout === 'countdown' ? ['background', 'title', 'timer'] : layout === 'screen' ? ['background', 'screen', 'camera'] : layout === 'screen-3d' ? ['background', 'camera', 'screen'] : ['background', 'camera'];
-  return { layers: ordered.map(kind => ({ id: kind, kind, name: layerNames[kind], visible: true })), cameraShape: 'rectangle', cameraBorderColor: '#ffffff', cameraBorderWidth: 0, cameraShadow: false, backgroundColor: '#080b11', productTitle: 'Algo incrível está chegando', countdownSeconds: 300, microphoneMuted: layout === 'countdown', microphoneGainDb: 0 };
+  return { layers: ordered.map(kind => ({ id: kind, kind, name: layerNames[kind], visible: true })), cameraShape: 'rectangle', cameraBorderColor: '#ffffff', cameraBorderWidth: 0, cameraShadow: false, cameraFade: layout === 'screen-3d', backgroundColor: '#080b11', productTitle: 'Algo incrível está chegando', countdownSeconds: 300, microphoneMuted: layout === 'countdown', microphoneGainDb: 0 };
 }
 export function normalizeSceneAppearance(layout: StudioLayout, input?: Partial<SceneAppearance>): SceneAppearance {
   const defaults = defaultSceneAppearance(layout);
@@ -37,6 +37,7 @@ export function normalizeSceneAppearance(layout: StudioLayout, input?: Partial<S
       ...(typeof entry.cameraBorderColor === 'string' ? { cameraBorderColor: color(entry.cameraBorderColor, '#ffffff') } : {}),
       ...(typeof entry.cameraBorderWidth === 'number' ? { cameraBorderWidth: finite(entry.cameraBorderWidth, 0, 0, 16) } : {}),
       ...(typeof entry.cameraShadow === 'boolean' ? { cameraShadow: entry.cameraShadow } : {}),
+      ...(typeof entry.cameraFade === 'boolean' ? { cameraFade: entry.cameraFade } : {}),
     });
   }
   return {
@@ -44,6 +45,7 @@ export function normalizeSceneAppearance(layout: StudioLayout, input?: Partial<S
     cameraShape: input?.cameraShape === 'circle' || input?.cameraShape === 'rounded' ? input.cameraShape : 'rectangle',
     cameraBorderColor: color(input?.cameraBorderColor, defaults.cameraBorderColor),
     cameraBorderWidth: finite(input?.cameraBorderWidth, 0, 0, 16), cameraShadow: input?.cameraShadow === true,
+    cameraFade: typeof input?.cameraFade === 'boolean' ? input.cameraFade : defaults.cameraFade,
     backgroundColor: color(input?.backgroundColor, defaults.backgroundColor),
     backgroundAssetId: typeof input?.backgroundAssetId === 'string' && input.backgroundAssetId ? input.backgroundAssetId.slice(0, 160) : undefined,
     productTitle: typeof input?.productTitle === 'string' ? input.productTitle.slice(0, 160) : defaults.productTitle,
@@ -54,7 +56,11 @@ export function normalizeSceneAppearance(layout: StudioLayout, input?: Partial<S
     microphoneDeviceId: typeof input?.microphoneDeviceId === 'string' && input.microphoneDeviceId ? input.microphoneDeviceId : undefined,
   };
 }
-export interface SceneVisualSource { element: CanvasImageSource; width: number; height: number }
+export interface SceneVisualSource {
+  element: CanvasImageSource; width: number; height: number;
+  /** Live cameras follow the presenter's movement in both output orientations. */
+  mirrorX?: boolean;
+}
 export interface SceneRenderInput {
   /** Both output orientations share a single capture snapshot for this frame. */
   frameId?: number;
@@ -137,7 +143,7 @@ export function resolveLayerBounds(layer: SceneLayer, input: SceneRenderInput, w
     rect = { ...cropped, x: x + cropped.x, y: y + cropped.y };
   }
   if (layer.kind === 'camera' && input.layout === 'camera-zoom') {
-    const zoom = finite(input.zoom, 1.6, 1, 2.5), cropWidth = rect.cropWidth / zoom, cropHeight = rect.cropHeight / zoom;
+    const zoom = finite(input.zoom, 1.4, 1, 2.5), cropWidth = rect.cropWidth / zoom, cropHeight = rect.cropHeight / zoom;
     rect = { ...rect, cropWidth, cropHeight, cropX: rect.cropX + (rect.cropWidth - cropWidth) / 2, cropY: rect.cropY + (rect.cropHeight - cropHeight) / 2 };
   }
   return rect;
@@ -171,7 +177,13 @@ export function getPresentationSlices(rect: PresentationRect, overlap = .3) {
 }
 function draw(context: CanvasRenderingContext2D, source: SceneVisualSource, rect: DrawRect) {
   if (![rect.x, rect.y, rect.width, rect.height, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight].every(Number.isFinite)) throw new Error('A composição retornou uma posição inválida.');
-  if (rect.width > 0 && rect.height > 0 && rect.cropWidth > 0 && rect.cropHeight > 0) context.drawImage(source.element, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight, rect.x, rect.y, rect.width, rect.height);
+  if (rect.width <= 0 || rect.height <= 0 || rect.cropWidth <= 0 || rect.cropHeight <= 0) return;
+  if (source.mirrorX) {
+    context.save();
+    context.translate(rect.x * 2 + rect.width, 0); context.scale(-1, 1);
+    context.drawImage(source.element, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight, rect.x, rect.y, rect.width, rect.height);
+    context.restore();
+  } else context.drawImage(source.element, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight, rect.x, rect.y, rect.width, rect.height);
 }
 function imageSize(image: CanvasImageSource): [number, number] {
   if (image instanceof HTMLVideoElement) return [image.videoWidth, image.videoHeight];
@@ -189,6 +201,7 @@ function roundedPath(context: CanvasRenderingContext2D, x: number, y: number, wi
 export class SceneCompositor {
   private generated = new Map<string, HTMLCanvasElement>();
   private decorations = new Map<string, HTMLCanvasElement>();
+  private cameraFades = new Map<string, CanvasGradient>();
   private presentationSlices = new Map<string, ReturnType<typeof getPresentationSlices>>();
   private screenFrames = new WeakMap<HTMLVideoElement, Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; frameId?: number }>>();
   private newCanvas(width: number, height: number) { const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.ceil(width)); canvas.height = Math.max(1, Math.ceil(height)); return canvas; }
@@ -233,7 +246,13 @@ export class SceneCompositor {
         }
         if (layer.kind === 'camera' && source) {
           const appearance = { ...input.appearance, cameraShape: layer.cameraShape ?? input.appearance.cameraShape, cameraBorderColor: layer.cameraBorderColor ?? input.appearance.cameraBorderColor, cameraBorderWidth: layer.cameraBorderWidth ?? input.appearance.cameraBorderWidth, cameraShadow: layer.cameraShadow ?? input.appearance.cameraShadow };
-          this.camera(context, source, rect, appearance, width, height, true);
+          const fade = input.layout === 'screen-3d' && input.orientation === 'landscape' && appearance.cameraShape !== 'circle' && (layer.cameraFade ?? appearance.cameraFade ?? true);
+          let fadeColor = input.appearance.backgroundColor;
+          if (fade) for (let below = 0; below < index; below++) {
+            const background = input.appearance.layers[below];
+            if (background.kind === 'background' && background.visible) fadeColor = background.color ?? input.appearance.backgroundColor;
+          }
+          this.camera(context, source, rect, appearance, width, height, true, fade ? fadeColor : undefined);
         }
         if (layer.kind === 'screen' && source) {
           const frame = this.screenFrame(source, rect, Math.max(width, height), input.frameId);
@@ -253,7 +272,7 @@ export class SceneCompositor {
     let frames = this.screenFrames.get(video);
     if (!frames) { frames = new Map(); this.screenFrames.set(video, frames); }
     const opaque = video.srcObject instanceof MediaStream;
-    const key = `${source.width}:${source.height}:${rect.cropX}:${rect.cropY}:${rect.cropWidth}:${rect.cropHeight}:${maxSize}:${opaque}`;
+    const key = `${source.width}:${source.height}:${rect.cropX}:${rect.cropY}:${rect.cropWidth}:${rect.cropHeight}:${maxSize}:${opaque}:${!!source.mirrorX}`;
     let frame = frames.get(key);
     if (!frame) {
       const scale = Math.min(1, maxSize / Math.max(rect.cropWidth, rect.cropHeight));
@@ -268,7 +287,7 @@ export class SceneCompositor {
       frame = { canvas, context }; frames.set(key, frame);
     }
     if (frameId === undefined || frame.frameId !== frameId) {
-      frame.context.drawImage(video, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight, 0, 0, frame.canvas.width, frame.canvas.height);
+      draw(frame.context, source, { ...rect, x: 0, y: 0, width: frame.canvas.width, height: frame.canvas.height });
       frame.frameId = frameId;
     }
     return {
@@ -289,12 +308,12 @@ export class SceneCompositor {
       this.countdownPainter.background(context, width, height, input.appearance);
     } else { context.fillStyle = input.appearance.backgroundColor; context.fillRect(0, 0, width, height); }
   }
-  private camera(context: CanvasRenderingContext2D, source: SceneVisualSource, initial: DrawRect, appearance: SceneAppearance, width: number, height: number, styled: boolean) {
+  private camera(context: CanvasRenderingContext2D, source: SceneVisualSource, initial: DrawRect, appearance: SceneAppearance, width: number, height: number, styled: boolean, fadeColor?: string) {
     let rect = initial;
     const shape = styled ? appearance.cameraShape : 'rectangle';
     const border = styled ? appearance.cameraBorderWidth * Math.min(width, height) / 1080 : 0;
     const shadow = styled && appearance.cameraShadow;
-    if (shape === 'rectangle' && !border && !shadow) { draw(context, source, rect); return; }
+    if (shape === 'rectangle' && !border && !shadow) { draw(context, source, rect); if (fadeColor) this.fadeCamera(context, rect, fadeColor); return; }
     const margin = Math.max(2, Math.ceil(Math.min(width, height) * 0.025));
     const key = `camera:${Math.ceil(rect.width)}:${Math.ceil(rect.height)}:${shape}:${border}:${appearance.cameraBorderColor}:${shadow}:${margin}`;
     let decoration = this.decorations.get(key);
@@ -306,8 +325,26 @@ export class SceneCompositor {
       this.cache(this.decorations, key, decoration);
     }
     context.drawImage(decoration, rect.x - margin, rect.y - margin);
-    context.save(); roundedPath(context, rect.x, rect.y, rect.width, rect.height, shape); context.clip(); draw(context, source, rect); context.restore();
+    context.save(); roundedPath(context, rect.x, rect.y, rect.width, rect.height, shape); context.clip(); draw(context, source, rect); if (fadeColor) this.fadeCamera(context, rect, fadeColor); context.restore();
     if (border) { context.save(); roundedPath(context, rect.x, rect.y, rect.width, rect.height, shape); context.lineWidth = border; context.strokeStyle = appearance.cameraBorderColor; context.stroke(); context.restore(); }
+  }
+  private fadeCamera(context: CanvasRenderingContext2D, rect: DrawRect, color: string) {
+    const width = rect.width * .22;
+    const key = `${rect.x}:${width}:${color}`;
+    let gradient = this.cameraFades.get(key);
+    if (!gradient) {
+      gradient = context.createLinearGradient(rect.x, 0, rect.x + width, 0);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(.35, `${color}8c`);
+      gradient.addColorStop(.7, `${color}26`);
+      gradient.addColorStop(1, `${color}00`);
+      this.cache(this.cameraFades, key, gradient);
+    }
+    // One cached gradient fill blends the join without copying live camera
+    // pixels into another canvas or adding blur to the capture pipeline.
+    context.fillStyle = gradient;
+    const left = Math.floor(rect.x);
+    context.fillRect(left, rect.y, width + rect.x - left, rect.height);
   }
   private perspective(context: CanvasRenderingContext2D, source: SceneVisualSource, rect: DrawRect, width: number, height: number) {
     const margin = Math.max(3, Math.ceil(Math.min(width, height) * 0.02));
@@ -335,5 +372,5 @@ export class SceneCompositor {
     context.restore();
   }
 
-  clear(): void { this.generated.clear(); this.decorations.clear(); this.presentationSlices.clear(); this.screenFrames = new WeakMap(); this.countdownPainter.clear(); }
+  clear(): void { this.generated.clear(); this.decorations.clear(); this.cameraFades.clear(); this.presentationSlices.clear(); this.screenFrames = new WeakMap(); this.countdownPainter.clear(); }
 }

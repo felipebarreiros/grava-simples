@@ -346,6 +346,7 @@ export function SceneInspector({
   const cameraStyle = {
     cameraShape: selectedLayer?.cameraShape ?? appearance.cameraShape,
     cameraShadow: selectedLayer?.cameraShadow ?? appearance.cameraShadow,
+    cameraFade: selectedLayer?.cameraFade ?? appearance.cameraFade ?? (scene.layout === "screen-3d"),
     cameraBorderColor:
       selectedLayer?.cameraBorderColor ?? appearance.cameraBorderColor,
     cameraBorderWidth:
@@ -708,7 +709,7 @@ export function SceneInspector({
         <section className="zoom-section">
           <div className="section-heading">
             <h2>Zoom da câmera</h2>
-            <output>{(scene.zoom ?? 1.6).toFixed(1)}×</output>
+            <output>{(scene.zoom ?? 1.4).toFixed(1)}×</output>
           </div>
           <Slider
             data-testid="camera-zoom"
@@ -716,7 +717,7 @@ export function SceneInspector({
             min={1}
             max={2.5}
             step={0.1}
-            value={[scene.zoom ?? 1.6]}
+            value={[scene.zoom ?? 1.4]}
             onValueChange={(values) => onZoom(values[0])}
           />
           <div className="range-ends">
@@ -755,6 +756,17 @@ export function SceneInspector({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          {scene.layout === "screen-3d" && orientation === "landscape" && cameraStyle.cameraShape !== "circle" && (
+            <div className="kit-setting-row">
+              <label htmlFor="camera-fade">Suavizar borda</label>
+              <Switch
+                id="camera-fade"
+                data-testid="camera-fade"
+                checked={cameraStyle.cameraFade}
+                onCheckedChange={(cameraFade) => editLayer({ cameraFade })}
+              />
+            </div>
+          )}
           <div className="kit-setting-row">
             <label htmlFor="camera-shadow">Sombra</label>
             <Switch
