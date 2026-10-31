@@ -17,6 +17,7 @@
     "package:export-source": "node scripts/package-export-source.mjs",
     "test:transcription": "node --test --test-concurrency=1 tests/transcription*.test.mjs tests/transcript.test.mjs tests/cloud-transcription.test.mjs",
     "build:companion": "node scripts/build-companion.mjs",
+    "build:companion:dmg": "bash scripts/build-companion-dmg.sh",
     "test:companion": "go -C companion test -race ./..."
   },
   "dependencies": {

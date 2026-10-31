@@ -46,5 +46,10 @@
         }
       ]
     }
-  ]
+  ],
+  "macosDmg": {
+    "url": "/companion/gravasimples-macos.dmg",
+    "bytes": 6482166,
+    "sha256": "a572d0b5db1d4a8c4a1f47b09bc24b18d8182d7fdafba92d311cfc9bf7ee85f5"
+  }
 }

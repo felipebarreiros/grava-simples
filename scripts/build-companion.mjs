@@ -186,10 +186,16 @@ try {
     artifacts.push({ platform, url: `/companion/${filename}`, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), binaries });
   }
   const sourceArchive = readFileSync(join(destination, 'companion-source.zip'));
+  const dmgPath = join(destination, 'gravasimples-macos.dmg');
+  const macosDmg = existsSync(dmgPath) ? (() => {
+    const bytes = readFileSync(dmgPath);
+    return { url: '/companion/gravasimples-macos.dmg', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  })() : null;
   const { stdout: goVersion } = await run('go', ['version']);
   atomicFile(join(destination, 'release.json'), `${JSON.stringify({
     version, license: 'GPL-2.0-or-later', signed: false, notarized: false,
     compiler: goVersion.trim(), minimumGoVersion: '1.26.8',
+    macosDmg,
     source: { url: '/companion/companion-source.zip', sha256: createHash('sha256').update(sourceArchive).digest('hex') }, artifacts,
   }, null, 2)}\n`);
   console.log('Packaged native macOS/Windows companions, corresponding source and licenses.');

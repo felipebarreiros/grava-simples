@@ -8,9 +8,9 @@ iPhone / Android OBS Blade → same Wi-Fi → local companion ↔ studio browser
 
 ## One-time computer setup
 
-Open **Celular** in the studio header and download the companion for **Mac** or **Windows**. Each ZIP includes the native executables, an installer and an uninstaller. No Node.js, Go, Docker, terminal commands or cloud settings are needed on the recording computer.
+Open **Celular** in the studio header and download the companion for **Mac** or **Windows**. The Mac download is a DMG; the Windows download is a ZIP. Each package includes the native executables, an installer and an uninstaller. No Node.js, Go, Docker, terminal commands or cloud settings are needed on the recording computer.
 
-- **macOS:** extract the ZIP and open `Install.command`. The installer selects Apple Silicon or Intel, installs into the current user's Application Support directory, registers a user LaunchAgent and starts the companion. The installer opens Terminal to display its result; you do not type commands.
+- **macOS:** open the DMG and open `Install.command`. The installer selects Apple Silicon or Intel, installs into the current user's Application Support directory, registers a user LaunchAgent and starts the companion. The installer opens Terminal to display its result; you do not type commands.
 - **Windows:** extract the ZIP and open `Install.cmd`. It selects ARM64 or x64, installs into the current user's Local AppData directory, registers startup under that user's Run key and starts the companion. The installer uses the bundled PowerShell script without changing the machine's execution policy.
 
 These development packages are unsigned. macOS Gatekeeper or Windows SmartScreen may require explicit approval before running them; no signing/notarization certificate has been configured. The installers do not remove quarantine flags, weaken global security policy or silently add firewall rules. Allow the helper on your **private/local network** if the operating system asks. School/corporate network isolation or firewall policy can still prevent phone-to-computer connections.
