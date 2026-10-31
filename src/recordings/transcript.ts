@@ -1,3 +1,5 @@
+import { scopedLocalKey } from "../projects/keys.ts";
+
 /** Local timed captions. Times always come from the imported subtitle file. */
 export interface TranscriptCue {
   id: string;
@@ -256,7 +258,7 @@ export function parseCloudTranscript(value: unknown): Transcript {
 /** Missing or malformed local data is treated as unavailable, never as generated speech. */
 export function loadTranscript(takeId: string): Transcript | null {
   try {
-    const stored = localStorage.getItem(TRANSCRIPT_STORAGE_PREFIX + takeId);
+    const stored = localStorage.getItem(scopedLocalKey(TRANSCRIPT_STORAGE_PREFIX + takeId));
     if (
       !stored ||
       new TextEncoder().encode(stored).byteLength > MAX_TRANSCRIPT_BYTES * 2
@@ -280,7 +282,7 @@ export function saveTranscript(
   const saved = { ...transcript, updatedAt: Date.now() };
   try {
     localStorage.setItem(
-      TRANSCRIPT_STORAGE_PREFIX + takeId,
+      scopedLocalKey(TRANSCRIPT_STORAGE_PREFIX + takeId),
       JSON.stringify(saved),
     );
   } catch {
@@ -293,7 +295,7 @@ export function saveTranscript(
 
 export function deleteTranscript(takeId: string): void {
   try {
-    localStorage.removeItem(TRANSCRIPT_STORAGE_PREFIX + takeId);
+    localStorage.removeItem(scopedLocalKey(TRANSCRIPT_STORAGE_PREFIX + takeId));
   } catch {
     throw new Error(
       "Não foi possível remover a transcrição deste navegador. Tente novamente.",

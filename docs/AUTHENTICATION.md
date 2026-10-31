@@ -13,7 +13,7 @@ npx -y clerk@latest env pull
 npm run dev
 ```
 
-`VITE_CLERK_PUBLISHABLE_KEY` is the only key consumed by the browser application. The optional transcription API independently verifies sessions using `CLERK_SECRET_KEY` or `CLERK_JWT_KEY`, with exact `APP_ORIGINS` and the configured Clerk issuer. Service credentials must never receive the `VITE_` prefix. Local environment files and Clerk link/claim files are excluded from Git and the downloadable source archive. The safe `.env.example` template is included in the source archive.
+`VITE_CLERK_PUBLISHABLE_KEY` is the only key consumed by the browser application. The recording-storage and transcription APIs independently verify sessions using `CLERK_SECRET_KEY` or `CLERK_JWT_KEY`, with exact `APP_ORIGINS` and the configured Clerk issuer. Service credentials must never receive the `VITE_` prefix. Local environment files and Clerk link/claim files are excluded from Git and the downloadable source archive. The safe `.env.example` template is included in the source archive.
 
 After changing environment configuration, restart the development server. Without a publishable key, the public home page remains available and application/account routes show an unavailable state; the studio does not become accessible.
 
@@ -41,11 +41,13 @@ foreground, input, primary, danger, and focus colors. It applies to the login an
 signup forms, account popover, and profile/security dialogs. Scoped field styles
 prevent generic studio input rules from overriding Clerk's contrast settings.
 
-The transcription API independently verifies an explicit Clerk session bearer token. Cookie-only requests, expired or pending sessions, other issuers and unapproved application origins are rejected. Jobs and media upload grants belong to the verified account; browser-supplied user IDs never authorize requests. Shared Redis quotas apply across Vercel instances and fail closed when unavailable. Client navigation guards are separate from API authorization. See [Vercel transcription setup](VERCEL_TRANSCRIPTION.md).
+The storage and transcription APIs independently verify an explicit Clerk session bearer token. Cookie-only requests, expired or pending sessions, other issuers and unapproved application origins are rejected. Jobs and media upload grants belong to the verified account; browser-supplied user IDs never authorize requests. Supabase Postgres provides atomic shared quotas and forced row-level security. The restricted runtime login binds the verified user ID only inside a transaction; it cannot own tables, bypass RLS or assume a privileged role. Cleanup has a separate execute-only login. Client navigation guards are separate from API authorization. See [storage access controls](CLOUD_STORAGE.md) and [transcription setup](VERCEL_TRANSCRIPTION.md).
 
 ## Local projects and recordings
 
-Projects, scene assets, and recordings remain in the existing origin's localStorage, IndexedDB, and OPFS stores. Clerk stores account/session information, but this integration does not send recordings to Clerk or add cloud synchronization. Accounts using the same browser and origin share the same local workspace. Logging out retains those local files. Account-specific storage ownership is a separate data-model change.
+Project catalogues, scene assets, recording bytes, transcripts and markers use account-specific localStorage, IndexedDB and OPFS namespaces. Account changes unmount the studio and asynchronous operations reject cross-account completion. Logging out retains local files, while another account sees its own catalogue. These namespaces do not encrypt data against someone controlling the same browser profile. Old unscoped recordings remain unassigned until the creator explicitly imports them.
+
+Optional cloud backup stores both original orientations in private Vercel Blob and their account-owned metadata in Supabase Postgres. Cloud access requires server authorization; Clerk does not store video files. Local-only recordings and authored scenes remain on the device. Browser cache eviction removes only freshly verified backed-up video copies; see [local and cloud storage](CLOUD_STORAGE.md).
 
 ## Hosting
 

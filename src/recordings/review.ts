@@ -1,3 +1,5 @@
+import { scopedLocalKey } from "../projects/keys.ts";
+
 export interface RecordingMarker {
   id: string;
   time: number;
@@ -7,7 +9,7 @@ export interface RecordingReview {
   version: 1;
   markers: RecordingMarker[];
 }
-const key = (id: string) => `grava-recording-review-v1:${id}`;
+const key = (id: string) => scopedLocalKey(`grava-recording-review-v1:${id}`);
 
 export function loadReview(id: string): RecordingReview {
   const empty: RecordingReview = { version: 1, markers: [] };

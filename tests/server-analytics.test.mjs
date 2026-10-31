@@ -6,7 +6,7 @@ import { createRequestTelemetry } from "../server/analytics.ts";
 const sessionId = "01977c1f-34ac-7000-8000-123456789abc";
 const traceparent = "00-123456789012345678901234567890ab-1234567890abcdef-01";
 
-function fixture({ configured = true, shutdown, headers = {} } = {}) {
+function fixture({ configured = true, shutdown, headers = {}, endpoint = "transcriptions" } = {}) {
   const calls = { captures: [], exceptions: [], spans: [], logs: [], shutdowns: 0, logShutdowns: 0 };
   const client = {
     capture: (message) => calls.captures.push(message),
@@ -24,7 +24,7 @@ function fixture({ configured = true, shutdown, headers = {} } = {}) {
     },
     async shutdown(timeout) { calls.shutdowns++; if (shutdown) await shutdown(timeout); },
   };
-  const telemetry = createRequestTelemetry("transcriptions", new Request(
+  const telemetry = createRequestTelemetry(endpoint, new Request(
     "https://studio.test/api/transcriptions?recordingId=SECRET&token=SECRET#SECRET", {
       method: "POST",
       headers: {
@@ -51,6 +51,17 @@ test("server telemetry is inert when its project token is absent", async () => {
   assert.equal(await telemetry.measure("provider_submit", async () => "result"), "result");
   await telemetry.finish(200);
   assert.deepEqual(calls, { captures: [], exceptions: [], spans: [], logs: [], shutdowns: 0, logShutdowns: 0 });
+});
+
+test("recording storage logs and errors identify their service without exposing media or transcript data", async () => {
+  const { telemetry, calls } = fixture({ endpoint: "recordings" });
+  telemetry.identify("user_alice");
+  await telemetry.finish(500);
+  assert.equal(calls.logs[0].body, "recording_storage_api_request");
+  assert.equal(calls.logs[0].attributes.endpoint, "recordings");
+  assert.equal(calls.spans[0].name, "POST /api/recordings");
+  assert.equal(calls.exceptions[0][0].name, "RecordingStorageApiFailure");
+  assert.doesNotMatch(JSON.stringify(calls), /PRIVATE|SECRET|user_forged|recordingId|authorization/);
 });
 
 test("events contain only authenticated identity and allowlisted categorical values", async () => {

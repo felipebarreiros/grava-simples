@@ -261,8 +261,8 @@ test("recordings above two hours expose the limit before an upload starts", asyn
   page,
 }) => {
   const saved = await seedRecordingReview(page);
-  await page.evaluate((id) => {
-    const key = "grava-simples-workspace-v1";
+  await page.evaluate(async (id) => {
+    const { WORKSPACE_STORAGE_KEY: key } = await import('/src/projects/keys.ts');
     const workspace = JSON.parse(localStorage.getItem(key)!);
     workspace.takes.find((take: any) => take.id === id).durationMs =
       7201 * 1000;

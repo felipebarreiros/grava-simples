@@ -1,4 +1,4 @@
-import { WORKSPACE_STORAGE_KEY } from './keys';
+import { scopedStorageName, WORKSPACE_STORAGE_KEY } from './keys';
 
 const DB_NAME = 'grava-simples-scene-assets';
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/bmp']);
@@ -27,8 +27,8 @@ function done(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-async function open(): Promise<IDBDatabase> {
-  const opening = indexedDB.open(DB_NAME, 1);
+async function open(name: string): Promise<IDBDatabase> {
+  const opening = indexedDB.open(name, 1);
   opening.onupgradeneeded = () => {
     const store = opening.result.createObjectStore('assets', { keyPath: 'id' });
     store.createIndex('project', 'projectId');
@@ -43,7 +43,7 @@ export async function saveSceneAsset(projectId: string, sceneId: string, blob: B
   const video = blob.type.startsWith('video/');
   if (!IMAGE_TYPES.has(blob.type) && !video) throw new Error('Escolha uma imagem ou um arquivo de vídeo.');
   if (!blob.size || blob.size > (video ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES)) throw new Error(video ? 'Escolha um vídeo de até 256 MB.' : 'Escolha uma imagem de até 25 MB.');
-  const database = await open();
+  const database = await open(scopedStorageName(DB_NAME));
   try {
     const transaction = database.transaction('assets', 'readwrite');
     const committed = done(transaction);
@@ -55,7 +55,7 @@ export async function saveSceneAsset(projectId: string, sceneId: string, blob: B
 }
 
 export async function readSceneAsset(assetId: string): Promise<Blob | undefined> {
-  const database = await open();
+  const database = await open(scopedStorageName(DB_NAME));
   try {
     const asset = await request(database.transaction('assets', 'readonly').objectStore('assets').get(assetId)) as SceneAsset | undefined;
     return asset?.blob;
@@ -63,8 +63,8 @@ export async function readSceneAsset(assetId: string): Promise<Blob | undefined>
 }
 
 /** Keep shared assets alive when a duplicate scene still uses the original image. */
-function projectAssetReferences(): { id: string; assets: string[] }[] {
-  const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+function projectAssetReferences(workspaceKey = WORKSPACE_STORAGE_KEY): { id: string; assets: string[] }[] {
+  const raw = localStorage.getItem(workspaceKey);
   if (!raw) return [];
   const workspace = JSON.parse(raw) as { projects: { id: string; sources?: { assetId?: string }[]; scenes: { appearance?: { backgroundAssetId?: string; layers?: {assetId?:string}[] } }[] }[] };
   return workspace.projects.map(project => ({ id: project.id, assets: [
@@ -73,9 +73,9 @@ function projectAssetReferences(): { id: string; assets: string[] }[] {
   ] }));
 }
 
-function referencedAssets(excludeProjectId?: string): Set<string> {
+function referencedAssets(excludeProjectId?: string, workspaceKey = WORKSPACE_STORAGE_KEY): Set<string> {
   const ids = new Set<string>();
-  for (const project of projectAssetReferences()) {
+  for (const project of projectAssetReferences(workspaceKey)) {
     if (project.id === excludeProjectId) continue;
     for (const id of project.assets) ids.add(id);
   }
@@ -83,10 +83,13 @@ function referencedAssets(excludeProjectId?: string): Set<string> {
 }
 
 async function removeAssets(select: (store: IDBObjectStore) => IDBRequest<SceneAsset[]>, excludeProjectId?: string, include: (asset: SceneAsset) => boolean = () => true): Promise<void> {
-  const database = await open();
+  // Capture both namespaces before the first await. An account change cannot
+  // make an old deletion inspect another account's current project references.
+  const workspaceKey = WORKSPACE_STORAGE_KEY;
+  const database = await open(scopedStorageName(DB_NAME));
   try {
     const assets = await request(select(database.transaction('assets', 'readonly').objectStore('assets')));
-    const protectedIds = referencedAssets(excludeProjectId);
+    const protectedIds = referencedAssets(excludeProjectId, workspaceKey);
     const transaction = database.transaction('assets', 'readwrite');
     const committed = done(transaction);
     for (const asset of assets) if (include(asset) && !protectedIds.has(asset.id)) transaction.objectStore('assets').delete(asset.id);
@@ -96,9 +99,10 @@ async function removeAssets(select: (store: IDBObjectStore) => IDBRequest<SceneA
 
 /** Removes this image only after it is no longer referenced by any saved scene. */
 export async function deleteSceneAsset(assetId: string): Promise<void> {
-  const database = await open();
+  const workspaceKey = WORKSPACE_STORAGE_KEY;
+  const database = await open(scopedStorageName(DB_NAME));
   try {
-    if (referencedAssets().has(assetId)) return;
+    if (referencedAssets(undefined, workspaceKey).has(assetId)) return;
     const transaction = database.transaction('assets', 'readwrite');
     const committed = done(transaction);
     transaction.objectStore('assets').delete(assetId);

@@ -13,7 +13,7 @@ const REQUEST_TIMEOUT_MS = 1200;
 const SHUTDOWN_TIMEOUT_MS = 1800;
 const SERVICE_NAME = "grava-simples-api";
 
-type Endpoint = "transcriptions" | "transcription-upload" | "transcription-cleanup";
+type Endpoint = "transcriptions" | "transcription-upload" | "transcription-cleanup" | "recordings" | "recordings-upload";
 type Operation = "provider_submit" | "provider_poll" | "source_cleanup";
 type Failure = "provider_submission_failed" | "provider_poll_failed" | "provider_transcription_failed" | "invalid_transcript" | "source_cleanup_pending";
 type BusinessEvent =
@@ -137,6 +137,7 @@ export function createRequestTelemetry(
   let logs: LogTransport | undefined;
   const method = ["GET", "POST", "DELETE", "OPTIONS"].includes(request.method) ? request.method : "OTHER";
   const route = `/api/${endpoint}`;
+  const recordingStorage = endpoint === "recordings" || endpoint === "recordings-upload";
   const parent = request.headers.get("traceparent") || undefined;
   const suppliedSession = request.headers.get("x-posthog-session-id") || "";
   const sessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(suppliedSession)
@@ -222,8 +223,8 @@ export function createRequestTelemetry(
       if (failed) {
         // Creating a fixed error intentionally discards user input, provider
         // errors and signed media URLs that could occur in an original stack.
-        const error = new Error(`Transcription API: ${failure}`);
-        error.name = "TranscriptionApiFailure";
+        const error = new Error(`${recordingStorage ? "Recording storage" : "Transcription"} API: ${failure}`);
+        error.name = recordingStorage ? "RecordingStorageApiFailure" : "TranscriptionApiFailure";
         safely(() => client?.captureException(error, userId || "grava-simples-api", {
           ...common,
           ...(ids ? { $trace_id: ids.traceId, $span_id: ids.spanId } : {}),
@@ -236,7 +237,7 @@ export function createRequestTelemetry(
       });
       if (configured) logs = safely(() => (options.createLogs ?? createLogs)(token!, host, deployment));
       safely(() => logs?.emit({
-        body: "transcription_api_request",
+        body: recordingStorage ? "recording_storage_api_request" : "transcription_api_request",
         severityNumber: failed ? SeverityNumber.ERROR : safeStatus >= 400 ? SeverityNumber.WARN : SeverityNumber.INFO,
         severityText: failed ? "ERROR" : safeStatus >= 400 ? "WARN" : "INFO",
         attributes: { ...common, duration_ms: Math.max(0, Math.round(performance.now() - started)) },

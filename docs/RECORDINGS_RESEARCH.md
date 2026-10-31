@@ -3,7 +3,7 @@
 Research checked against primary sources on 2026-10-30. Feature proposals below
 are recommendations, not claims that the application already implements them.
 
-Implementation update: the Vercel release now includes an authenticated asynchronous transcription API using AssemblyAI Universal-2, private Blob and shared Redis limits. This original analysis describes the earlier local-only baseline and editing roadmap. See [deployment instructions](VERCEL_TRANSCRIPTION.md) and [current platform/provider research](VERCEL_TRANSCRIPTION_RESEARCH.md) for the implemented cloud approach. Rendered media cuts remain future work.
+Implementation update: the Vercel release now includes an authenticated asynchronous transcription API using AssemblyAI Universal-2, private Blob and shared Postgres limits. This original analysis describes the earlier local-only baseline and editing roadmap. See [deployment instructions](VERCEL_TRANSCRIPTION.md) and [current platform/provider research](VERCEL_TRANSCRIPTION_RESEARCH.md) for the implemented cloud approach. Rendered media cuts remain future work.
 
 ## Recommended direction
 
