@@ -326,6 +326,82 @@ test("an unconfigured service shows a concise empty state without imports or aut
   expect(uploads).toBe(0);
 });
 
+test("an initially unavailable service is checked again and starts the queued job when it becomes ready", async ({ page }) => {
+  const saved = await seedRecordingReview(page);
+  await mockBlobClient(page);
+  let reads = 0;
+  let stage: "idle" | "processing" = "idle";
+  await page.route("**/api/transcription-upload", route =>
+    route.fulfill({ contentType: "application/json", body: "{}" }),
+  );
+  await page.route("**/api/transcriptions*", async route => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      stage = "processing";
+      return route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ ...idle, status: "queued", jobId: "retry-job" }),
+      });
+    }
+    reads++;
+    if (reads === 1)
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ...idle, configured: false }),
+      });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ...idle, status: stage, ...(stage === "processing" ? { jobId: "retry-job" } : {}) }),
+    });
+  });
+  await openRecordingLibrary(page, saved.projectId);
+  await openRecordingDetail(page);
+  await expect(page.getByTestId("transcription-status")).toHaveText(
+    "Transcrição indisponível no momento.Verificar novamente",
+  );
+  await expect.poll(() => reads, { timeout: 15_000 }).toBeGreaterThan(1);
+  await expect(page.getByText(/Na fila para transcrição…|Transcrevendo sua gravação…/)).toBeVisible();
+  await expect(page.getByTestId("transcript-cue")).toHaveCount(0);
+});
+
+test("a transient transcription API failure returns to the waiting state and retries automatically", async ({ page }) => {
+  const saved = await seedRecordingReview(page);
+  await mockBlobClient(page);
+  let reads = 0;
+  let stage: "idle" | "processing" = "idle";
+  await page.route("**/api/transcription-upload", route =>
+    route.fulfill({ contentType: "application/json", body: "{}" }),
+  );
+  await page.route("**/api/transcriptions*", async route => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      stage = "processing";
+      return route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({ ...idle, status: "queued", jobId: "retry-job" }),
+      });
+    }
+    reads++;
+    if (reads === 1)
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Temporarily unavailable" }),
+      });
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ...idle, status: stage, ...(stage === "processing" ? { jobId: "retry-job" } : {}) }),
+    });
+  });
+  await openRecordingLibrary(page, saved.projectId);
+  await openRecordingDetail(page);
+  await expect(page.getByText("Temporarily unavailable", { exact: true })).toBeVisible();
+  await expect.poll(() => reads, { timeout: 10_000 }).toBeGreaterThan(1);
+  await expect(page.getByText(/Na fila para transcrição…|Transcrevendo sua gravação…/)).toBeVisible();
+});
+
 test('a cloud recording checks saved text before starting and persists its generated transcript once', async ({ page }) => {
   const saved = await seedRecordingReview(page);
   await mockBlobClient(page);

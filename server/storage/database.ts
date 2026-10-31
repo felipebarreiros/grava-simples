@@ -7,7 +7,11 @@ export function storagePool(url: string): Pool {
   if (!pool) {
     // Role-level statement deadlines also work through Supabase's transaction
     // pooler; avoid relying on a session-specific startup parameter there.
-    pool = new Pool({ connectionString: url, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 8_000, query_timeout: 12_000, application_name: "grava-simples-api" });
+    // Supabase's shared pooler certificate is not in the Node runtime trust
+    // store. Mirror sslmode=require: keep the connection encrypted and avoid
+    // a plain-text fallback. A CA certificate can tighten this later without
+    // changing the runtime URL contract.
+    pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false }, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 8_000, query_timeout: 12_000, application_name: "grava-simples-api" });
     pool.on("error", () => { /* Never print credentials or query parameters. */ });
     pools.set(url, pool);
   }
