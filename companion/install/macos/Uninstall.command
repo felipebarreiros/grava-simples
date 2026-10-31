@@ -8,6 +8,7 @@ EXECUTABLE="$APP_DIR/gravasimples-companion"
 if [ -f "$AGENT_PATH" ]; then /bin/launchctl bootout "gui/$(id -u)" "$AGENT_PATH" >/dev/null 2>&1 || true; fi
 if [ -x "$EXECUTABLE" ]; then "$EXECUTABLE" --stop --config "$CONFIG_PATH" >/dev/null 2>&1 || true; fi
 /bin/rm -f "$AGENT_PATH" "$EXECUTABLE" "$APP_DIR/Uninstall.command"
+/bin/rm -rf "$APP_DIR/airplay"
 for document in COPYING.txt THIRD-PARTY-NOTICES.txt LEIA-ME.txt; do /bin/rm -f "$APP_DIR/$document"; done
 echo "O controle local e a inicializacao automatica foram removidos."
 echo "Seus projetos e videos no navegador nao foram alterados."

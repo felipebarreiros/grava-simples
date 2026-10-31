@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync,
+  chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync,
   readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
@@ -14,8 +14,13 @@ const sourceRoot = join(root, 'companion');
 const destination = join(root, 'public/companion');
 const contextRoot = join(root, '.context');
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
+const airplayBinary = process.env.AIRPLAY_BINARY ? resolve(process.env.AIRPLAY_BINARY) : '';
+const airplayBundle = process.env.AIRPLAY_BUNDLE ? resolve(process.env.AIRPLAY_BUNDLE) : '';
+const airplayLicense = process.env.AIRPLAY_LICENSE_FILE ? resolve(process.env.AIRPLAY_LICENSE_FILE) : '';
 if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new Error('Invalid application version.');
 if (!existsSync(join(sourceRoot, 'go.mod'))) throw new Error('The native companion Go module is missing.');
+if (airplayBinary && !existsSync(airplayBinary)) throw new Error(`AIRPLAY_BINARY does not exist: ${airplayBinary}`);
+if (airplayBundle && !existsSync(airplayBundle)) throw new Error(`AIRPLAY_BUNDLE does not exist: ${airplayBundle}`);
 mkdirSync(destination, { recursive: true });
 mkdirSync(contextRoot, { recursive: true });
 const work = mkdtempSync(join(contextRoot, 'companion-package-'));
@@ -80,6 +85,10 @@ Install.cmd. O instalador escolhe Apple Silicon/Intel ou Windows ARM64/x64.
 O aplicativo e os instaladores sao nativos; nao e preciso instalar Node,
 Go, Docker nem abrir um servidor manualmente.
 
+Quando o pacote inclui o receptor AirPlay, ele aparece como GravaSimples
+enquanto o estudio estiver aberto. No iPad, abra Central de Controle >
+Espelhar Tela e escolha GravaSimples. Fechar o estudio encerra o receptor.
+
 O pequeno aplicativo fica em segundo plano e inicia quando voce entra no
 usuario. Abrir o estudio GravaSimples no Chrome conecta o controle local.
 No primeiro uso, o Chrome ou o sistema podem pedir permissao de rede local.
@@ -112,6 +121,8 @@ nao altera a politica do Windows de forma permanente.
 CODIGO-FONTE E LICENCAS
 GravaSimples: GPL v2 ou posterior; veja COPYING.txt.
 Gorilla WebSocket: BSD; veja THIRD-PARTY-NOTICES.txt e source/vendor.
+Se o receptor AirPlay estiver incluido, consulte airplay/LICENSE.txt e o
+codigo correspondente fornecido na release de origem.
 O codigo Go completo e a dependencia vendorizada estao em source/.
 Para compilar a partir de source/, use Go 1.26.8 ou posterior:
   go build -mod=vendor -trimpath -buildvcs=false -o gravasimples-companion .
@@ -176,6 +187,14 @@ try {
       copy(path, join(packageDirectory, 'binaries', target.name));
       binaries.push({ arch: target.arch, file: `binaries/${target.name}`, sha256: createHash('sha256').update(readFileSync(path)).digest('hex') });
     }
+    const airplayForPlatform = ((platform === 'macos' && os === 'darwin') || (platform === 'windows' && os === 'windows')) && (airplayBinary || airplayBundle);
+    if (airplayForPlatform && airplayBundle) {
+      cpSync(airplayBundle, join(packageDirectory, 'airplay', basename(airplayBundle)), { recursive: true });
+    } else if (airplayForPlatform && airplayBinary) {
+      const name = platform === 'windows' ? 'uxplay.exe' : 'uxplay';
+      copy(airplayBinary, join(packageDirectory, 'airplay', name));
+    }
+    if (airplayForPlatform && airplayLicense && existsSync(airplayLicense)) copy(airplayLicense, join(packageDirectory, 'airplay', 'LICENSE.txt'));
     for (const file of walk(source)) copy(file, join(packageDirectory, 'source', relative(source, file)));
     copy(join(root, 'COPYING'), join(packageDirectory, 'COPYING.txt'));
     writeFileSync(join(packageDirectory, 'THIRD-PARTY-NOTICES.txt'), notices);
@@ -183,7 +202,7 @@ try {
     const filename = `gravasimples-${platform}.zip`, output = join(destination, filename);
     zip(packageDirectory, output);
     const bytes = readFileSync(output);
-    artifacts.push({ platform, url: `/companion/${filename}`, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), binaries });
+    artifacts.push({ platform, url: `/companion/${filename}`, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), binaries, airplay: Boolean(airplayForPlatform) });
   }
   const sourceArchive = readFileSync(join(destination, 'companion-source.zip'));
   const { stdout: goVersion } = await run('go', ['version']);

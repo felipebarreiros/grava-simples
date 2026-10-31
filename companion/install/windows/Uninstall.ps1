@@ -27,6 +27,7 @@ try {
     $RemovePairing = $answer -match '^(s|sim)$'
   }
   if ($RemovePairing) { Remove-Item -LiteralPath $configPath -Force -ErrorAction SilentlyContinue }
+  Remove-Item -LiteralPath (Join-Path $appDirectory 'airplay') -Recurse -Force -ErrorAction SilentlyContinue
   # Keep the small uninstaller scripts so a running Uninstall.cmd is not deleted underneath cmd.exe.
 } catch {
   Write-Error $_.Exception.Message

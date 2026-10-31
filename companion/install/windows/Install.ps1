@@ -3,6 +3,8 @@ $appDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData'))
 $configDirectory = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'GravaSimples'
 $configPath = Join-Path $configDirectory 'pairing.json'
 $executable = Join-Path $appDirectory 'GravaSimplesCompanion.exe'
+$airplayDirectory = Join-Path $appDirectory 'airplay'
+$airplayExecutable = Join-Path $airplayDirectory 'popyachsa-airplay.exe'
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runName = 'GravaSimplesCompanion'
 
@@ -33,13 +35,22 @@ try {
     catch { Start-Sleep -Milliseconds 150 }
   }
   if (-not $replaced) { throw 'O controle anterior ainda esta aberto. Feche-o e abra Install.cmd novamente.' }
+  $airplayPayloadDirectory = Join-Path $PSScriptRoot 'airplay'
+  $airplayPayload = Join-Path $airplayPayloadDirectory 'popyachsa-airplay.exe'
+  if (-not (Test-Path -LiteralPath $airplayPayload -PathType Leaf)) { $airplayPayload = Join-Path $airplayPayloadDirectory 'uxplay.exe' }
+  if (Test-Path -LiteralPath $airplayPayload -PathType Leaf) {
+    New-Item -ItemType Directory -Path $airplayDirectory -Force | Out-Null
+    Copy-Item -Path (Join-Path $airplayPayloadDirectory '*') -Destination $airplayDirectory -Recurse -Force
+    $candidate = Get-ChildItem -LiteralPath $airplayDirectory -Filter 'popyachsa-airplay.exe' -File -Recurse | Select-Object -First 1
+    if ($candidate) { $airplayExecutable = $candidate.FullName }
+  }
   foreach ($document in @('Uninstall.ps1', 'Uninstall.cmd', 'COPYING.txt', 'THIRD-PARTY-NOTICES.txt', 'LEIA-ME.txt')) {
     $source = Join-Path $PSScriptRoot $document
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $appDirectory $document) -Force }
   }
 
   # Per-user login startup; no administrator access, service or firewall rule.
-  $arguments = '--config "' + $configPath + '"'
+  $arguments = '--config "' + $configPath + '" --airplay-bin "' + $airplayExecutable + '"'
   $startupCommand = '"' + $executable + '" ' + $arguments
   if (-not (Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey -Force | Out-Null }
   New-ItemProperty -LiteralPath $runKey -Name $runName -Value $startupCommand -PropertyType String -Force | Out-Null

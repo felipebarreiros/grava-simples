@@ -136,6 +136,8 @@ type broker struct {
 	mutationMu       sync.Mutex
 	requestTimeout   time.Duration
 	shutdown         func()
+	airplay          *airplayManager
+	airplayMu        sync.Mutex
 }
 
 func newBroker(config *configStore, extra []string) *broker {
@@ -146,7 +148,7 @@ func newBroker(config *configStore, extra []string) *broker {
 			origins[origin] = true
 		}
 	}
-	return &broker{config: config, origins: origins, phones: map[*phone]bool{}, pending: map[string]*pendingRequest{}, receipts: map[string]*receipt{}, rates: map[string]bucket{}, requestTimeout: 35 * time.Second}
+	return &broker{config: config, origins: origins, phones: map[*phone]bool{}, pending: map[string]*pendingRequest{}, receipts: map[string]*receipt{}, rates: map[string]bucket{}, requestTimeout: 35 * time.Second, airplay: newAirplayManager(defaultAirplayCommand(), "GravaSimples")}
 }
 func remoteIP(r *http.Request) net.IP {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -248,7 +250,12 @@ func (b *broker) ready(s *studio) {
 		}
 	}
 	b.mu.Unlock()
-	_ = s.peer.send(map[string]any{"type": "ready", "connectionId": s.id, "addresses": lanAddresses(), "port": b.port, "password": cfg.Password, "phoneConnected": connected, "version": version})
+	airplay := map[string]any{"available": false, "running": false, "name": "GravaSimples"}
+	if b.airplay != nil {
+		airplay["available"] = b.airplay.available()
+		airplay["running"] = b.airplay.running()
+	}
+	_ = s.peer.send(map[string]any{"type": "ready", "connectionId": s.id, "addresses": lanAddresses(), "port": b.port, "password": cfg.Password, "phoneConnected": connected, "version": version, "airplay": airplay})
 }
 func lanAddresses() []string {
 	addresses := []string{}
@@ -309,6 +316,13 @@ func (b *broker) serveStudio(w http.ResponseWriter, r *http.Request) {
 	}
 	b.studio = s
 	b.mu.Unlock()
+	// The helper may run at login, but the AirPlay receiver must only advertise
+	// while this browser has an active studio lease.
+	if b.airplay != nil {
+		b.airplayMu.Lock()
+		_ = b.airplay.start()
+		b.airplayMu.Unlock()
+	}
 	defer b.detachStudio(s)
 	p.conn.SetReadLimit(maxFrame)
 	_ = p.conn.SetReadDeadline(time.Now().Add(20 * time.Second))
@@ -415,6 +429,11 @@ func (b *broker) detachStudio(s *studio) {
 	}
 	b.mu.Unlock()
 	b.closePhones("Studio disconnected")
+	if b.airplay != nil {
+		b.airplayMu.Lock()
+		b.airplay.close()
+		b.airplayMu.Unlock()
+	}
 }
 func (b *broker) closePhones(reason string) {
 	b.mu.Lock()
@@ -435,6 +454,11 @@ func (b *broker) close() {
 		s.peer.close(1001, "Companion closed")
 	}
 	b.closePhones("Companion closed")
+	if b.airplay != nil {
+		b.airplayMu.Lock()
+		b.airplay.close()
+		b.airplayMu.Unlock()
+	}
 }
 func (b *broker) phoneStatus() {
 	b.mu.Lock()

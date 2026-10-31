@@ -1,12 +1,18 @@
 import type { ObsRequestResult } from './protocol';
 
 export const LOCAL_REMOTE_URL = 'ws://127.0.0.1:4455/studio';
+export interface LocalAirPlay {
+  available: boolean;
+  running: boolean;
+  name: string;
+}
 export interface LocalPairing {
   connectionId: string;
   addresses: string[];
   port: number;
   password: string;
   phoneConnected: boolean;
+  airplay?: LocalAirPlay;
 }
 export interface LocalRequest {
   type: 'request';
@@ -56,6 +62,11 @@ export function parseHelperMessage(data: unknown): HelperMessage | null {
         || typeof value.port !== 'number' || !Number.isInteger(value.port) || value.port < 1 || value.port > 65_535
         || typeof value.password !== 'string' || value.password.length < 12 || value.password.length > 256
         || typeof value.phoneConnected !== 'boolean') return null;
+      if (value.airplay !== undefined) {
+        const airplay = value.airplay as Record<string, unknown>;
+        if (!airplay || typeof airplay !== 'object' || typeof airplay.available !== 'boolean'
+          || typeof airplay.running !== 'boolean' || typeof airplay.name !== 'string' || airplay.name.length > 80) return null;
+      }
       return value as unknown as HelperMessage;
     case 'request':
       if (typeof value.id !== 'string' || !/^[\w:.-]{1,128}$/.test(value.id)

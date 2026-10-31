@@ -50,6 +50,9 @@ test('loopback helper messages enforce bounded credentials, LAN addresses and re
   ]) assert.equal(parseHelperMessage(JSON.stringify(value)), null);
   assert.equal(parseHelperMessage('x'.repeat(65_537)), null);
   assert.equal(parseHelperMessage('not json'), null);
+  const airplayReady = { ...ready(), airplay: { available: true, running: true, name: 'GravaSimples' } };
+  assert.deepEqual(parseHelperMessage(JSON.stringify(airplayReady)), airplayReady);
+  assert.equal(parseHelperMessage(JSON.stringify({ ...ready(), airplay: { available: 'yes' } })), null);
 });
 
 test('first local-access prompt requires one click; granted permission reconnects automatically on a later visit', async () => {
