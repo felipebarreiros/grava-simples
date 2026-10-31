@@ -15,7 +15,9 @@
     "test:auth:live": "playwright test --config tests/auth-live.config.ts",
     "build:export": "bash scripts/build-export-wasm.sh && node scripts/package-export-source.mjs",
     "package:export-source": "node scripts/package-export-source.mjs",
-    "test:transcription": "node --test --test-concurrency=1 tests/transcription*.test.mjs tests/transcript.test.mjs tests/cloud-transcription.test.mjs"
+    "test:transcription": "node --test --test-concurrency=1 tests/transcription*.test.mjs tests/transcript.test.mjs tests/cloud-transcription.test.mjs",
+    "build:companion": "node scripts/build-companion.mjs",
+    "test:companion": "go -C companion test -race ./..."
   },
   "dependencies": {
     "@clerk/backend": "^3.26.5",
@@ -60,10 +62,12 @@
     "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/ws": "^8.18.2",
     "@vercel/node": "^29.0.0",
     "@vitejs/plugin-react": "6.1.2",
     "typescript": "7.0.2",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "ws": "^8.22.0"
   },
   "overrides": {
     "zod": "^4.6.7"

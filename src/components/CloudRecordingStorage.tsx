@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react';
-import { Cloud, CloudDownload, CloudUpload, HardDrive, LoaderCircle, RefreshCw } from 'lucide-react';
+import { ChevronRight, Cloud, CloudDownload, CloudUpload, HardDrive, LoaderCircle, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
+import { Switch } from './ui/switch';
+import { Tooltip } from './ui/tooltip';
+import { Modal } from './StudioUi';
 import { claimLegacyRecordings, hasUnclaimedLegacyRecordings, mergeCloudRecordings, type Project, type ProjectTake } from '../projects/store';
 import { assertLocalAccount, getLocalAccount, scopedLocalKey } from '../projects/keys';
 import { listRecoverableRecordings } from '../media/storage';
@@ -11,6 +14,8 @@ import { loadTranscript } from '../recordings/transcript';
 import './CloudRecordingStorage.css';
 
 const size = (bytes: number) => bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+const gbFormatter = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
+const formatGb = (bytes: number) => gbFormatter.format(bytes / 1024 ** 3);
 const text = (error: unknown) => error instanceof Error ? error.message : 'Não foi possível concluir. Tente novamente.';
 export function useCloudRecordingLibrary(takes: ProjectTake[], projects: Project[], protectedIds: string[], busy: boolean, onChange: () => void) {
   const { getToken, userId } = useAuth();
@@ -44,6 +49,7 @@ export function useCloudRecordingLibrary(takes: ProjectTake[], projects: Project
       const remote = await listCloudRecordings(() => token.current(), signal);
       if (!valid()) return;
       setLibrary(remote);
+      setError('');
       if (remote.configured) {
         mergeCloudRecordings(remote.recordings);
         change.current();
@@ -108,13 +114,35 @@ export function useCloudRecordingLibrary(takes: ProjectTake[], projects: Project
 }
 export type CloudLibraryModel = ReturnType<typeof useCloudRecordingLibrary>;
 export function CloudRecordingStorage({ model }: { model: CloudLibraryModel }) {
-  return <section className="cloud-storage" aria-label="Armazenamento das gravações" data-testid="cloud-storage">
-    <div className="cloud-storage-summary"><Cloud size={17} /><span>{model.library?.configured ? `Nuvem: ${size(model.library.usedBytes)} de ${size(model.library.maxStorageBytes)}` : model.loading ? 'Conectando sua biblioteca…' : 'Backup na nuvem indisponível'}</span><span><HardDrive size={15} /> Neste navegador: {size(model.localBytes)}</span><Button variant="ghost" size="sm" disabled={model.loading || model.busy} onClick={() => void model.refresh(undefined, true)} aria-label="Atualizar biblioteca na nuvem"><RefreshCw size={14} /></Button></div>
-    {model.library?.configured && <label className="cloud-auto"><input type="checkbox" checked={Boolean(model.autoSince)} disabled={model.busy} onChange={event => model.setAutomatic(event.target.checked)} /> Fazer backup automático das próximas gravações</label>}
-    <p className="cloud-storage-note">Cópias com backup confirmado podem sair do cache ao atingir 1 GB ou quando faltar espaço. Originais sem backup são preservados.</p>
-    {model.legacy && <div className="cloud-legacy"><p>Há gravações anteriores neste navegador. Importe-as apenas se forem suas; elas não serão enviadas automaticamente.</p><Button variant="outline" size="sm" disabled={model.busy || Boolean(model.operations.legacy)} onClick={() => void model.importLegacy()}>{model.operations.legacy || 'Importar minhas gravações deste navegador'}</Button></div>}
-    {model.error && <p className="cloud-storage-error" role="alert">{model.error}</p>}
-  </section>;
+  const [open, setOpen] = useState(false);
+  const automaticId = useId();
+  const limit = model.library?.maxStorageBytes ?? 0;
+  const used = model.library?.usedBytes ?? 0;
+  const known = Boolean(model.library?.configured && Number.isFinite(limit) && limit > 0 && Number.isFinite(used) && used >= 0);
+  const usage = known ? `${formatGb(used)} de ${formatGb(limit)} GB` : model.loading ? 'Verificando espaço…' : 'Nuvem não conectada';
+  const percentage = known ? Math.min(100, Math.max(0, used / limit * 100)) : 0;
+  const label = known ? `${usage} usados na nuvem` : usage;
+  return <>
+    <section className="sidebar-storage" aria-label="Armazenamento das gravações" data-testid="cloud-storage">
+      <Tooltip content={label}>
+        <Button variant="ghost" className="storage-meter" aria-label={`Armazenamento: ${label}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+          <span className="storage-meter-heading"><Cloud size={16} /><span>Armazenamento</span>{(model.error || model.legacy) && <span className="storage-meter-notice" aria-label={model.legacy ? 'Gravações anteriores disponíveis para importar' : 'Há um aviso de armazenamento'} />}<ChevronRight size={13} className="storage-meter-chevron" /></span>
+          <span className={`storage-meter-usage ${known ? '' : 'is-unknown'}`}>{usage}</span>
+        </Button>
+      </Tooltip>
+      <div className="storage-meter-track" role="progressbar" aria-label="Espaço usado na nuvem" aria-valuemin={0} aria-valuemax={known ? limit : undefined} aria-valuenow={known ? Math.min(used, limit) : undefined} aria-valuetext={label}>
+        <span style={{ width: `${percentage}%` }} />
+      </div>
+    </section>
+    {open && <Modal title="Armazenamento" onClose={() => setOpen(false)} className="storage-details">
+      <div className="storage-details-cloud"><div><span>Espaço na nuvem</span><strong>{usage}</strong></div><Button variant="ghost" size="icon" disabled={model.loading || model.busy} onClick={() => void model.refresh(undefined, true)} aria-label="Atualizar biblioteca na nuvem"><RefreshCw size={15} className={model.loading ? 'spin' : ''} /></Button></div>
+      {!known && !model.loading && <p className="storage-connection-note">Conecte sua biblioteca na nuvem para acompanhar o espaço disponível e salvar suas gravações online.</p>}
+      {known && <div className="storage-auto"><label htmlFor={automaticId}><strong>Backup automático</strong><span>Salvar as próximas gravações na nuvem.</span></label><Switch id={automaticId} checked={Boolean(model.autoSince)} disabled={model.busy} onCheckedChange={model.setAutomatic} /></div>}
+      <div className="storage-local"><span><HardDrive size={16} /> Neste dispositivo</span><strong>{size(model.localBytes)}</strong></div>
+      {model.legacy && <div className="cloud-legacy"><p>Há gravações anteriores neste navegador. Importe-as apenas se forem suas; elas não serão enviadas automaticamente.</p><Button variant="outline" size="sm" disabled={model.busy || Boolean(model.operations.legacy)} onClick={() => void model.importLegacy()}>{model.operations.legacy || 'Importar minhas gravações deste navegador'}</Button></div>}
+      {model.error && <p className="cloud-storage-error" role="alert">{model.error}</p>}
+    </Modal>}
+  </>;
 }
 export function CloudRecordingActions({ take, model }: { take: ProjectTake; model: CloudLibraryModel }) {
   const local = model.localIds.includes(take.id);
