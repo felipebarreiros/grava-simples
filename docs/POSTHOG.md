@@ -41,7 +41,19 @@ Vite generates hidden source maps. `scripts/posthog-sourcemaps.mjs` injects chun
 
 Five daily product scouts (general, product analytics, logs, APM and Web Vitals) plus operational inbox validation are enabled. Native health, error-created/reopened/spiking and log-alert sources feed the inbox. Scouts can write findings/notebooks; they do not merge code, send Slack messages or invoke webhooks. Existing organization AI approval and plan are unchanged.
 
-The project currently has no GitHub OAuth integration. To let Self-driving propose code changes for this repository, connect `felipebarreiros/grava-simples` through [project integrations](https://us.posthog.com/project/700132/settings/environment-integrations). This cannot be completed with the available personal API-key authentication. Replay Vision scanner creation is not exposed by the available management tools and has not been configured.
+The [GitHub integration](https://us.posthog.com/project/700132/settings/environment-integrations) is connected (integration `344224`), reusing the existing installation for `felipebarreiros`. Repository access to `felipebarreiros/grava-simples` was verified. Project steering selects this repository only, with `main` as the base branch. This steering is not a GitHub permission allowlist: the shared installation's existing repository access remains unchanged. No extra implementation repositories are configured.
+
+Self-driving autostart is enabled, with a maximum of five reports per day. Implementations open draft PRs for human review; project instructions prohibit automatic merging, publishing or deployment. Configuration and repository read access were verified; no synthetic implementation task or write-test PR was created.
+
+Three [Replay Vision scanners](https://us.posthog.com/project/700132/replay-vision) are enabled:
+
+| Scanner | Sampling | Hard cap per billing period | Inbox findings |
+| --- | --- | --- | --- |
+| Broken creator workflows | 25% | 100 credits | Yes |
+| Repeated interaction friction (rage clicks) | 50% | 100 credits | Yes |
+| Creator session summaries | 5% | 100 credits | No |
+
+The combined scanner cap is 300 credits ($3 at configuration time). The organization budget and plan are unchanged. Filters use sanitized route labels, and prompts respect masked content rather than trying to reconstruct it. Monitor findings feed the native `replay_vision/scanner_finding` source. Estimates initially showed no qualifying traffic, and setup did not trigger paid backfills or on-demand analysis. Scanner creation and settings were verified through supported REST endpoints; those write operations are not exposed in the current CLI tool catalog.
 
 ## Validation
 
