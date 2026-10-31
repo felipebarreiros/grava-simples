@@ -1,6 +1,33 @@
-.recording-countdown { max-width: 320px; text-align: center; }
-.recording-countdown .modal-header { align-items: center; }
-.recording-countdown .modal-header h2 { font-size: 16px; }
-.recording-countdown .modal-content { display: grid; justify-items: stretch; gap: 24px; padding-top: 6px; }
-.recording-countdown-number { font-size: 88px; line-height: 1.2; font-weight: 550; font-variant-numeric: tabular-nums; color: var(--text, #f5f3ef); }
+.studio-modal.recording-countdown {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  background: rgb(13 13 13 / 88%);
+  box-shadow: none;
+  animation: none;
+  text-align: center;
+}
+.recording-countdown .modal-header { padding: 0; }
+.recording-countdown .modal-header h2 { color: var(--muted); font-size: 15px; font-weight: 400; letter-spacing: 0; }
+.recording-countdown .modal-header > .icon-button { display: none; }
+.recording-countdown .modal-content { display: flex; flex-direction: column; align-items: center; gap: 32px; padding: 0; }
+.recording-countdown-number { font-size: clamp(144px, 40vmin, 400px); line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.06em; color: var(--accent, #ff4000); }
+.recording-countdown .modal-content > .ui-button { min-width: 136px; min-height: 44px; padding: 10px 24px; border: 1px solid #ffffff26; border-radius: 999px; background: #ffffff0a; }
+.recording-countdown .modal-content > .ui-button:hover { background: #ffffff14; }
+@media (max-height: 420px) {
+  .studio-modal.recording-countdown { gap: 8px; }
+  .recording-countdown .modal-content { gap: 16px; }
+  .recording-countdown-number { font-size: min(40vmin, 160px); }
+}
 .recording-countdown-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
