@@ -10,18 +10,18 @@ const license = readFileSync(resolve(root, 'vendor/obs/COPYING'), 'utf8');
 writeFileSync(resolve(root, 'COPYING'), license);
 writeFileSync(resolve(destination, 'COPYING.txt'), license);
 const notices = ['GravaSimples recording experiment\n\nApplication and OBS-derived code: GPL version 2 or later. See COPYING.txt.\nOBS source provenance and adaptation details: vendor/obs/NOTICE.md in the source archive.\n'];
-for (const dependency of ['react', 'react-dom', 'scheduler', 'lucide-react', 'clsx']) {
+for (const dependency of ['react', 'react-dom', 'scheduler', 'lucide-react', 'clsx', 'posthog-js', 'posthog-node']) {
   const path = resolve(root, `node_modules/${dependency}/LICENSE`);
   if (existsSync(path)) notices.push(`\n=== ${dependency} ===\n${readFileSync(path, 'utf8')}`);
 }
-for (const scope of ['@radix-ui', '@floating-ui', '@dnd-kit', '@clerk', '@upstash', '@vercel']) {
+for (const scope of ['@radix-ui', '@floating-ui', '@dnd-kit', '@clerk', '@upstash', '@vercel', '@posthog', '@opentelemetry']) {
   const directory = resolve(root, 'node_modules', scope);
   if (existsSync(directory)) for (const dependency of readdirSync(directory)) {
     const path = resolve(directory, dependency, 'LICENSE');
     if (existsSync(path)) notices.push(`\n=== ${scope}/${dependency} ===\n${readFileSync(path, 'utf8')}`);
   }
 }
-for (const dependency of ['aria-hidden', 'react-remove-scroll', 'react-remove-scroll-bar', 'react-style-singleton', 'use-sidecar', 'use-callback-ref', 'get-nonce', 'detect-node-es', 'tslib', 'react-router', 'react-router-dom']) {
+for (const dependency of ['aria-hidden', 'react-remove-scroll', 'react-remove-scroll-bar', 'react-style-singleton', 'use-sidecar', 'use-callback-ref', 'get-nonce', 'detect-node-es', 'tslib', 'react-router', 'react-router-dom', 'core-js', 'dompurify', 'fflate', 'preact', 'query-selector-shadow-dom', 'web-vitals', 'web-vitals-soft-navs']) {
   const directory = resolve(root, 'node_modules', dependency);
   if (!existsSync(directory)) continue;
   const license = readdirSync(directory).find(name => /^licen[cs]e(?:\.|$)/i.test(name));
@@ -37,7 +37,7 @@ const exportLicense = resolve(root, 'public/export/COPYING.LGPLv2.1.txt');
 if (existsSync(exportLicense)) notices.push(`\n=== FFmpeg minimal local AAC export (LGPL2.1-or-later) ===\nCorresponding source: /source/ffmpeg-export-source.tar.gz\n${readFileSync(exportLicense, 'utf8')}`);
 const exportWrapperLicense = resolve(root, 'vendor/export/FFMPEGWASM-LICENSE');
 if (existsSync(exportWrapperLicense)) notices.push(`\n=== ffmpeg.wasm wrapper (MIT) ===\n${readFileSync(exportWrapperLicense, 'utf8')}`);
-writeFileSync(resolve(destination, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n'));
+writeFileSync(resolve(destination, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, ''));
 const entries = ['COPYING', 'README.md', '.env.example', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'tsconfig.server.json', 'vercel.json', 'vite.config.ts', 'playwright.config.ts', 'src', 'api', 'server', 'engine', 'vendor', 'scripts', 'tests', 'docs', 'public/engine', 'public/export', 'public/source/ffmpeg-export-source.tar.gz', 'public/fonts', 'public/scenes', 'public/favicon.svg', 'public/source/THIRD-PARTY-NOTICES.txt'].filter(entry => existsSync(resolve(root, entry)));
 const archive = resolve(destination, 'grava-simples-source.tar.gz');
 execFileSync('tar', ['--exclude=engine/build-logs', '--exclude=*.webm', '--exclude=*.mp4', '-czf', archive + '.tmp', ...entries], { cwd: root });
