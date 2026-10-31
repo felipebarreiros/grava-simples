@@ -122,9 +122,9 @@ export function RemoteControl(props: RemoteControlProps) {
           <p className="remote-control-intro">Troque cenas, mostre ou oculte fontes, silencie o microfone e inicie ou pare os dois vídeos pelo celular.</p>
           <section className="remote-install" aria-label="Instalar aplicativo de conexão">
             <strong>Instale uma vez neste computador</strong>
-            <p>Baixe o aplicativo para seu sistema, extraia o ZIP e execute o instalador. Ele inicia automaticamente com o computador.</p>
+            <p>No Mac, abra o DMG e execute <strong>Install.command</strong>. No Windows, extraia o ZIP e execute <strong>Install.cmd</strong>. O aplicativo inicia automaticamente com o computador.</p>
             <div className="remote-downloads">
-              <Button asChild variant="outline" size="sm"><a href="/companion/gravasimples-macos.zip" download><Download size={14} />Baixar para Mac</a></Button>
+              <Button asChild variant="outline" size="sm"><a href="/companion/gravasimples-macos.dmg" download><Download size={14} />Baixar para Mac</a></Button>
               <Button asChild variant="outline" size="sm"><a href="/companion/gravasimples-windows.zip" download><Download size={14} />Baixar para Windows</a></Button>
             </div>
           </section>

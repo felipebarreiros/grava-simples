@@ -129,7 +129,7 @@ test('first local-network permission is requested by a click and pairing reset c
   await page.getByRole('button', { name: 'Controle pelo celular', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Controle pelo celular', exact: true });
   await expect(dialog.getByRole('status')).toContainText('Permita a conexão');
-  await expect(dialog.getByRole('link', { name: 'Baixar para Mac' })).toHaveAttribute('href', '/companion/gravasimples-macos.zip');
+  await expect(dialog.getByRole('link', { name: 'Baixar para Mac' })).toHaveAttribute('href', '/companion/gravasimples-macos.dmg');
   await expect(dialog.getByRole('link', { name: 'Baixar para Windows' })).toHaveAttribute('href', '/companion/gravasimples-windows.zip');
   await dialog.getByRole('button', { name: 'Conectar ao computador', exact: true }).click();
   await expect(dialog.getByRole('status')).toContainText('Celular conectado');
