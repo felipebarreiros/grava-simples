@@ -3,7 +3,10 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
 if (!process.env.DATABASE_ADMIN_URL) throw new Error('DATABASE_ADMIN_URL is required for administrative migration.');
-const client = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL, connectionTimeoutMillis: 15000 });
+// Supabase's shared pooler certificate is not in Node's default trust store.
+// Keep this one-time administrative connection encrypted instead of falling
+// back to plaintext; the database password and role checks remain required.
+const client = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15000 });
 await client.connect();
 const originalMembership = await client.query("SELECT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles granted ON granted.oid=m.roleid JOIN pg_roles member ON member.oid=m.member WHERE member.rolname=current_user AND granted.rolname='grava_storage_worker') AS present");
 try {

@@ -159,6 +159,7 @@ export function RecordingDetail({
   const [leftTab, setLeftTab] = useState("transcript");
   const [cloud, setCloud] = useState<CloudTranscription | null>(null);
   const [cloudError, setCloudError] = useState("");
+  const [cloudRefreshing, setCloudRefreshing] = useState(false);
   const [cloudUploadProgress, setCloudUploadProgress] = useState<number | null>(
     null,
   );
@@ -325,6 +326,13 @@ export function RecordingDetail({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refreshCloud = async () => {
       if (controller.signal.aborted || epoch !== cloudEpoch.current) return;
+      if (mounted.current) {
+        setCloudRefreshing(true);
+        // A retry should return to the waiting state while the API is checked.
+        // Keep the previous cloud state so queued jobs remain visible if this
+        // request fails again.
+        setCloudError("");
+      }
       try {
         const next = await getCloudTranscription(
           take.id,
@@ -358,6 +366,12 @@ export function RecordingDetail({
         }
         if (next.status === "queued" || next.status === "processing")
           timer = setTimeout(refreshCloud, 5000);
+        else if (!next.configured)
+          // Configuration can be added without a new browser session. Keep
+          // checking in the background so the user does not need to guess
+          // when the service is ready, while the explicit button remains
+          // available after each completed check.
+          timer = setTimeout(refreshCloud, 10_000);
       } catch (error) {
         if (controller.signal.aborted || epoch !== cloudEpoch.current) return;
         setCloudError(failureMessage(error));
@@ -366,10 +380,13 @@ export function RecordingDetail({
         ) {
           const retry =
             error instanceof TranscriptionRequestError
-              ? Math.max(error.retryAfter * 1000, 15000)
-              : 15000;
+              ? Math.max(error.retryAfter * 1000, 5000)
+              : 5000;
           timer = setTimeout(refreshCloud, Math.min(retry, 2147483647));
         }
+      } finally {
+        if (mounted.current && !controller.signal.aborted && epoch === cloudEpoch.current)
+          setCloudRefreshing(false);
       }
     };
     void refreshCloud();
@@ -384,6 +401,7 @@ export function RecordingDetail({
     markAutomaticTranscription(userId, take.id, "started");
     setAutomaticAttempt("started");
     setCloudError("");
+    setCloudRefreshing(false);
     setCloudUploadProgress(0);
     cloudEpoch.current++;
     cloudPoll.current?.abort();
@@ -444,6 +462,7 @@ export function RecordingDetail({
     setAutomaticPending(false);
     cloudEpoch.current++;
     cloudPoll.current?.abort();
+    setCloudRefreshing(false);
     setCancellingCloud(true);
     cloudRequest.current?.abort();
     setCloudUploadProgress(null);
@@ -475,6 +494,7 @@ export function RecordingDetail({
     if (userId) { markAutomaticTranscription(userId, take.id, "removed"); setAutomaticAttempt("removed"); }
     cloudEpoch.current++;
     cloudPoll.current?.abort();
+    setCloudRefreshing(false);
     setRemovingTranscript(true);
     try {
       if (cloud?.configured && cloud.status !== "idle")
@@ -618,11 +638,12 @@ export function RecordingDetail({
 
   const transcriptionProblem = cloudError || storedTranscriptError || (cloud?.status === "error" ? cloud.error || "Não foi possível transcrever esta gravação." : "");
   const tooLarge = Boolean(cloud?.configured && transcriptionFile.size > cloud.maxUploadBytes);
-  const transcriptionLoading = cloudBusy || (!transcriptionProblem && !transcriptionTooLong && !tooLarge && (!cloud || !storedTranscriptLoaded || (cloud.configured && cloud.status === "idle" && !automaticAttempt)));
+  const transcriptionLoading = cloudBusy || cloudRefreshing || (!transcriptionProblem && !transcriptionTooLong && !tooLarge && (!cloud || !storedTranscriptLoaded || (cloud.configured && cloud.status === "idle" && !automaticAttempt)));
   const transcriptionMessage = cancellingCloud ? "Cancelando transcrição…"
     : cloudUploadProgress !== null ? `Enviando gravação · ${Math.round(cloudUploadProgress)}%`
     : cloud?.status === "queued" ? "Na fila para transcrição…"
     : cloud?.status === "processing" ? "Transcrevendo sua gravação…"
+    : cloudRefreshing && cloud?.configured === false ? "Verificando disponibilidade da transcrição…"
     : transcriptionProblem || (transcriptionTooLong && cloud?.configured ? "Esta gravação excede o limite de duas horas para transcrição."
       : tooLarge ? "Esta gravação excede o limite de tamanho para transcrição."
       : cloud?.noSpeech ? "Nenhuma fala foi encontrada nesta gravação."
