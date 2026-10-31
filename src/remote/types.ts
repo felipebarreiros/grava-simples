@@ -17,6 +17,8 @@ export interface RemoteSnapshot {
   microphoneMuted: boolean;
   microphoneGainDb?: number;
   recordState: 'ready' | 'recording' | 'stopping' | 'unavailable';
+  /** A cancellable preparation/countdown; neither output is recording yet. */
+  recordingStartPending?: boolean;
   elapsedMs: number;
   bytes: number;
   fps: number;

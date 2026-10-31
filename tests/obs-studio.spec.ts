@@ -148,3 +148,86 @@ test('local Wi-Fi helper automatically connects, controls both recorders and pre
     await rm(configDirectory, { recursive: true, force: true });
   }
 });
+
+test('local Wi-Fi StopRecord cancels a web-initiated countdown before either real recorder starts', async ({ page, baseURL }) => {
+  const binary = process.env.COMPANION_BINARY ?? resolve('.context/gravasimples-companion-e2e');
+  if (!process.env.COMPANION_BINARY) {
+    const build = spawnSync('go', ['build', '-trimpath', '-o', binary, '.'], { cwd: resolve('companion'), encoding: 'utf8' });
+    expect(build.status, build.error?.message ?? build.stderr).toBe(0);
+  }
+  const configDirectory = await mkdtemp(resolve(tmpdir(), 'grava-countdown-companion-'));
+  const helper = spawn(binary, ['--listen', '0.0.0.0:4455', '--config', resolve(configDirectory, 'pairing.json'), '--allow-origin', new URL(baseURL!).origin], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let helperLog = '';
+  helper.stderr.on('data', data => { helperLog = (helperLog + data.toString()).slice(-4000); });
+  const clients: Awaited<ReturnType<typeof phone>>[] = [];
+  let hostedRequests = 0;
+  await page.addInitScript(() => {
+    const NativeRecorder = window.MediaRecorder;
+    (window as any).__remoteCountdownRecorderStarts = 0;
+    (window as any).__remoteCountdownHeartbeats = 0;
+    window.MediaRecorder = class extends NativeRecorder {
+      start(timeslice?: number) {
+        (window as any).__remoteCountdownRecorderStarts++;
+        super.start(timeslice);
+      }
+    };
+    const send = WebSocket.prototype.send;
+    WebSocket.prototype.send = function(data) {
+      if (typeof data === 'string') {
+        try {
+          const message = JSON.parse(data);
+          if (message.type === 'state' && message.snapshot?.recordingStartPending === true)
+            (window as any).__remoteCountdownHeartbeats++;
+        } catch { /* Only observe actual state publications; preserve transport bytes. */ }
+      }
+      return send.call(this, data);
+    };
+  });
+  await page.route('**/api/remote**', async route => { hostedRequests++; await route.abort(); });
+  await page.route('**/api/recordings*', route => route.fulfill({ json: { configured: false, recordings: [], usedBytes: 0, maxStorageBytes: 0 } }));
+  await page.route('**/api/transcriptions*', route => route.fulfill({ json: { configured: false, status: 'idle', maxUploadBytes: 0 } }));
+  await page.context().grantPermissions(['local-network-access']);
+  try {
+    await expect.poll(async () => {
+      if (helper.exitCode !== null) throw new Error(helperLog);
+      try { return (await page.request.get('http://127.0.0.1:4455/health')).status(); } catch { return 0; }
+    }).toBe(200);
+    await prepare(page);
+    await page.getByRole('button', { name: 'Controle pelo celular', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Controle pelo celular', exact: true });
+    await expect(dialog.getByRole('status')).toContainText('Pronto para conectar o OBS Blade');
+    const password = await dialog.getByLabel('Senha do OBS Blade', { exact: true }).inputValue();
+    const client = await phone('ws://127.0.0.1:4455/', password); clients.push(client);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    // The shipped helper keeps phone StartRecord immediate. Only the web
+    // Gravar action owns this countdown; the phone may cancel it with StopRecord.
+    await page.getByTestId('start-recording').click();
+    await expect(page.getByTestId('recording-countdown')).toContainText('3');
+    expect(await page.evaluate(() => (window as any).__remoteCountdownRecorderStarts)).toBe(0);
+    // This is an actual browser->helper state heartbeat during the web
+    // countdown, rather than a fake transport or an optimistic recording state.
+    await expect.poll(() => page.evaluate(() => (window as any).__remoteCountdownHeartbeats), { timeout: 2000, intervals: [25, 50, 100] }).toBeGreaterThan(0);
+    const stats = await client.request('GetStats');
+    expect(stats.requestStatus.result, JSON.stringify(stats)).toBe(true);
+    expect(typeof stats.responseData.activeFps).toBe('number');
+    expect(await page.evaluate(() => (window as any).__remoteCountdownRecorderStarts)).toBe(0);
+    const stopResponse = await client.request('StopRecord');
+    expect(stopResponse.requestStatus.result, JSON.stringify(stopResponse)).toBe(true);
+    await expect(page.getByTestId('recording-countdown')).toHaveCount(0);
+    await page.waitForTimeout(3300);
+    expect(await page.evaluate(() => (window as any).__remoteCountdownRecorderStarts)).toBe(0);
+    expect(await page.evaluate(async () => (await import('/src/projects/store.ts')).listProjectTakes().length)).toBe(0);
+    expect((await client.request('GetRecordStatus')).responseData.outputActive).toBe(false);
+    expect(hostedRequests).toBe(0);
+  } finally {
+    await page.keyboard.press('Escape').catch(() => {});
+    for (const client of clients) await client.close();
+    if (helper.exitCode === null) {
+      const exited = new Promise<void>(resolve => helper.once('exit', () => resolve()));
+      helper.kill('SIGTERM'); await exited;
+    }
+    await rm(configDirectory, { recursive: true, force: true });
+  }
+});

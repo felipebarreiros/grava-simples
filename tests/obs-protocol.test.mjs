@@ -164,6 +164,21 @@ test('invalid fields and unavailable desktop never dispatch a mutation', async (
   assert.equal(unavailable.requestStatus.code, 207);
 });
 
+test('StopRecord cancels a pending start without claiming either output is active', async () => {
+  const pending = snapshot({ recordState: 'unavailable', ready: false, recordingStartPending: true });
+  const commands = [];
+  const dispatch = async command => { commands.push(command); return { ok: true }; };
+  assert.equal(successful(await read('GetRecordStatus', undefined, pending)).outputActive, false);
+  successful(await handleObsRequest('StopRecord', undefined, pending, dispatch));
+  assert.deepEqual(commands, [{ type: 'stopRecording' }]);
+  assert.equal((await handleObsRequest('StopRecord', undefined, snapshot({ recordState: 'unavailable', ready: false }), dispatch)).requestStatus.code, 501);
+  assert.equal((await handleObsRequest('StartRecord', undefined, snapshot({ recordingStartPending: true }), dispatch)).requestStatus.code, 207);
+  assert.equal((await handleObsRequest('SetInputMute', { inputUuid: MICROPHONE_UUID, inputMuted: true }, pending, dispatch)).requestStatus.code, 207);
+  assert.equal(commands.length, 1, 'only cancellation may dispatch during a pending start');
+  assert.deepEqual(translateEvents(snapshot(), pending), [], 'readiness is not a recording output transition');
+  assert.deepEqual(translateEvents(pending, snapshot()), [], 'cancelling before start emits no fake recording event');
+});
+
 test('unsupported pause, live, media, preview and full mixer operations are not advertised', async () => {
   for (const type of ['ToggleInputMute', 'ToggleRecord', 'PauseRecord', 'ResumeRecord', 'ToggleRecordPause', 'StartStream', 'GetSourceScreenshot', 'SetInputVolume', 'SetCurrentProfile', 'SetStudioModeEnabled', 'TriggerMediaInputAction']) {
     assert.equal(AVAILABLE_REQUESTS.includes(type), false);

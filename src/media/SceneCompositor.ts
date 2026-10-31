@@ -137,7 +137,7 @@ export function resolveLayerBounds(layer: SceneLayer, input: SceneRenderInput, w
     rect = { ...cropped, x: x + cropped.x, y: y + cropped.y };
   }
   if (layer.kind === 'camera' && input.layout === 'camera-zoom') {
-    const zoom = finite(input.zoom, 1.6, 1, 2.5), cropWidth = rect.cropWidth / zoom, cropHeight = rect.cropHeight / zoom;
+    const zoom = finite(input.zoom, 1.4, 1, 2.5), cropWidth = rect.cropWidth / zoom, cropHeight = rect.cropHeight / zoom;
     rect = { ...rect, cropWidth, cropHeight, cropX: rect.cropX + (rect.cropWidth - cropWidth) / 2, cropY: rect.cropY + (rect.cropHeight - cropHeight) / 2 };
   }
   return rect;

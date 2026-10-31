@@ -125,7 +125,8 @@ function sceneItem(state: RemoteSnapshot, scene: Scene, item: RemoteSceneItem, i
 const cutTransition = { transitionName: 'Cut', transitionUuid: 'grava-cut', transitionKind: 'cut_transition', transitionFixed: true, transitionDuration: null, transitionConfigurable: false, transitionSettings: null };
 
 async function execute(state: RemoteSnapshot, command: RemoteCommand, dispatch: Dispatch): Promise<RemoteCommandResult> {
-  if (state.recordState === 'unavailable') throw new ProtocolError(207, 'The desktop studio is busy or its sources are unavailable.');
+  const cancelPendingStart = command.type === 'stopRecording' && state.recordingStartPending === true;
+  if ((state.recordState === 'unavailable' || state.recordingStartPending) && !cancelPendingStart) throw new ProtocolError(207, 'The desktop studio is busy or its sources are unavailable.');
   const result = await dispatch(command);
   if (!result.ok) throw new ProtocolError(701, result.error?.slice(0, 256) || 'The desktop did not confirm this command. Refresh its state before trying again.');
   return result;
@@ -228,9 +229,9 @@ export async function handleObsRequest(
       case 'StartRecord': case 'StopRecord': {
         const active = isRecording(state), start = requestType === 'StartRecord';
         if (requestType === 'StartRecord' && active) throw new ProtocolError(500, 'Both recordings are already running.');
-        if (requestType === 'StopRecord' && !active) throw new ProtocolError(501, 'The recording session is not running.');
+        if (requestType === 'StopRecord' && !active && !state.recordingStartPending) throw new ProtocolError(501, 'The recording session is not running.');
         if (state.recordState === 'stopping') throw new ProtocolError(207, 'The desktop is finalizing both recordings.');
-        if (start && !state.ready) throw new ProtocolError(207, 'Prepare camera, microphone and screen permissions in the desktop studio first.');
+        if (start && (!state.ready || state.recordingStartPending)) throw new ProtocolError(207, 'Prepare camera, microphone and screen permissions in the desktop studio first.');
         await execute(state, { type: start ? 'startRecording' : 'stopRecording' }, dispatch);
         // A browser has no filesystem output path. Both files remain in its recording library.
         return success(requestType === 'StopRecord' ? { outputPath: '' } : {});
@@ -271,7 +272,8 @@ export function translateEvents(previous: RemoteSnapshot, next: RemoteSnapshot):
   }
   if (previous.microphoneMuted !== next.microphoneMuted) emit('InputMuteStateChanged', 8, { inputName: MICROPHONE_NAME, inputUuid: MICROPHONE_UUID, inputMuted: next.microphoneMuted });
   if (previous.microphoneGainDb !== next.microphoneGainDb && next.microphoneGainDb !== undefined) emit('InputVolumeChanged', 8, { inputName: MICROPHONE_NAME, inputUuid: MICROPHONE_UUID, inputVolumeDb: next.microphoneGainDb, inputVolumeMul: Math.pow(10, next.microphoneGainDb / 20) });
-  if (previous.recordState !== next.recordState) {
+  const outputState = (state: RemoteSnapshot) => state.recordState === 'stopping' ? 'stopping' : isRecording(state) ? 'recording' : 'stopped';
+  if (outputState(previous) !== outputState(next)) {
     const active = isRecording(next);
     emit('RecordStateChanged', 64, { outputActive: active, outputState: next.recordState === 'stopping' ? 'OBS_WEBSOCKET_OUTPUT_STOPPING' : active ? 'OBS_WEBSOCKET_OUTPUT_STARTED' : 'OBS_WEBSOCKET_OUTPUT_STOPPED', ...(active ? {} : { outputPath: '' }) });
   }

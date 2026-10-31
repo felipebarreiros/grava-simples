@@ -16,7 +16,7 @@ export interface RemoteControllerOptions {
   reconnectMs?: number;
   now?: () => number;
 }
-interface RequestEntry { fingerprint: string; result?: ObsRequestResult; receivedAt: number; request: LocalRequest }
+interface RequestEntry { fingerprint: string; result?: ObsRequestResult; receivedAt: number; request: LocalRequest; blockedByPendingStart?: boolean }
 const MUTATING = new Set(['SetCurrentProgramScene', 'SetSceneItemEnabled', 'SetInputMute', 'StartRecord', 'StopRecord']);
 const failed = (comment: string, code = 207): ObsRequestResult => ({ requestStatus: { result: false, code, comment } });
 
@@ -141,18 +141,27 @@ export class RemoteController {
     if (this.requests.size > 512) {
       for (const [id, entry] of this.requests) if (entry.result) { this.requests.delete(id); if (this.requests.size <= 256) break; }
     }
-    if (this.requests.size >= 1024 || (MUTATING.has(request.requestType) && this.queue.length >= 32)) {
+    const pendingStart = (request.requestType === 'StartRecord' || request.requestType === 'StopRecord')
+      && this.options.getSnapshot().recordingStartPending === true;
+    const cancelPendingStart = request.requestType === 'StopRecord' && pendingStart;
+    const duplicateStart = request.requestType === 'StartRecord' && pendingStart;
+    if (this.requests.size >= 1024 || (MUTATING.has(request.requestType) && !cancelPendingStart && !duplicateStart && this.queue.length >= 32)) {
       this.send({ type: 'response', id: request.id, result: failed('The studio is busy. Try again.') }); return;
     }
-    const entry: RequestEntry = { request, fingerprint, receivedAt: this.now() };
+    const entry: RequestEntry = { request, fingerprint, receivedAt: this.now(), ...(duplicateStart ? { blockedByPendingStart: true } : {}) };
     this.requests.set(request.id, entry);
-    if (MUTATING.has(request.requestType)) { this.queue.push(entry); void this.drain(generation); }
+    // Stop must reach the cancellable start that currently owns the mutation
+    // queue. A second Start is rejected now, not replayed after that cancellation.
+    // run() still enforces the connection generation, request deadline and cache.
+    if (cancelPendingStart || duplicateStart) void this.run(entry, generation);
+    else if (MUTATING.has(request.requestType)) { this.queue.push(entry); void this.drain(generation); }
     else void this.run(entry, generation);
   }
   private async run(entry: RequestEntry, generation: number) {
     if (!this.current(generation)) return;
     let result: ObsRequestResult;
     if (entry.request.expiresAt <= this.now() || this.now() - entry.receivedAt > 8000) result = failed('The command expired before execution. Try again.');
+    else if (entry.blockedByPendingStart) result = failed('A recording start is already pending. Cancel it before trying again.');
     else {
       try {
         result = await handleObsRequest(entry.request.requestType, entry.request.requestData ?? {}, this.options.getSnapshot(), async command => {

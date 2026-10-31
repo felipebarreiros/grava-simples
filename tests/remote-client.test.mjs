@@ -114,6 +114,81 @@ test('same-connection duplicate mutations cannot replay, while changed request d
   } finally { f.controller.dispose(); }
 });
 
+// Browser-controller stress contract only: the native helper serializes phone
+// mutations. Actual helper cancellation is tested with a web-initiated countdown.
+test('browser controller priority StopRecord cancels a pending start while reads and request protections stay active', async () => {
+  let current = snapshot(), finishStart, actualStarts = 0;
+  const operations = [];
+  const f = fixture({ getSnapshot: () => current, execute: async command => {
+    operations.push(command.type);
+    if (command.type === 'startRecording') {
+      current = { ...current, ready: false, recordState: 'unavailable', recordingStartPending: true };
+      return new Promise(resolve => { finishStart = commit => {
+        if (commit) actualStarts++;
+        current = { ...current, ready: true, recordState: 'ready', recordingStartPending: false };
+        resolve(commit ? { ok: true } : { ok: false, error: 'Cancelled before recording.' });
+      }; });
+    }
+    if (command.type === 'stopRecording') { finishStart(false); return { ok: true }; }
+    return { ok: true };
+  } });
+  try {
+    const socket = await f.connect();
+    socket.request('countdown-start', 'StartRecord');
+    await until(() => typeof finishStart === 'function');
+    socket.request('another-start', 'StartRecord');
+    socket.request('countdown-stats', 'GetStats');
+    socket.request('countdown-status', 'GetRecordStatus');
+    await until(() => socket.response('countdown-stats') && socket.response('countdown-status') && socket.response('another-start'));
+    assert.equal(socket.response('another-start').result.requestStatus.code, 207);
+    assert.equal(socket.response('countdown-status').result.responseData.outputActive, false);
+    assert.equal(socket.response('countdown-stats').result.responseData.activeFps, 30);
+    await until(() => socket.sent.filter(message => message.type === 'state' && message.snapshot.recordingStartPending).length >= 3);
+    socket.request('expired-cancel', 'StopRecord', {}, Date.now() - 1);
+    await until(() => socket.response('expired-cancel'));
+    assert.match(socket.response('expired-cancel').result.requestStatus.comment, /expired/);
+    assert.deepEqual(operations, ['startRecording']);
+    socket.request('countdown-cancel', 'StopRecord');
+    socket.request('countdown-cancel', 'StopRecord');
+    await until(() => socket.response('countdown-cancel') && socket.response('countdown-start'));
+    assert.equal(socket.response('countdown-cancel').result.requestStatus.result, true);
+    assert.equal(socket.response('countdown-start').result.requestStatus.result, false);
+    assert.equal(socket.response('countdown-start').result.requestStatus.code, 701);
+    assert.equal(actualStarts, 0);
+    assert.deepEqual(operations, ['startRecording', 'stopRecording']);
+    assert.equal(current.recordingStartPending, false);
+    socket.request('countdown-cancel', 'StopRecord');
+    await pause(10);
+    assert.deepEqual(operations, ['startRecording', 'stopRecording']);
+    assert.equal(socket.sent.some(message => message.type === 'events' && message.events.some(event => event.eventType === 'RecordStateChanged' && event.eventData.outputActive)), false);
+  } finally { if (current.recordingStartPending) finishStart?.(false); f.controller.dispose(); }
+});
+
+test('a normal StopRecord cannot jump another mutation when no start is pending', async () => {
+  let current = { ...snapshot(), recordState: 'recording', ready: false }, finishMute;
+  const operations = [];
+  const f = fixture({ getSnapshot: () => current, execute: async command => {
+    operations.push(command.type);
+    if (command.type === 'setMicrophoneMuted') return new Promise(resolve => { finishMute = () => resolve({ ok: true }); });
+    if (command.type === 'stopRecording') current = { ...current, recordState: 'ready', ready: true };
+    return { ok: true };
+  } });
+  try {
+    const socket = await f.connect();
+    socket.request('held-mute', 'SetInputMute', { inputUuid: 'grava-microphone', inputMuted: true });
+    await until(() => typeof finishMute === 'function');
+    socket.request('ordinary-stop', 'StopRecord');
+    socket.request('ordinary-stats', 'GetStats');
+    await until(() => socket.response('ordinary-stats'));
+    assert.deepEqual(operations, ['setMicrophoneMuted']);
+    assert.equal(socket.response('ordinary-stop'), undefined);
+    finishMute();
+    await until(() => socket.response('ordinary-stop'));
+    assert.deepEqual(operations, ['setMicrophoneMuted', 'stopRecording']);
+    assert.equal(socket.response('ordinary-stop').result.requestStatus.result, true);
+  } finally { finishMute?.(); f.controller.dispose(); }
+});
+
 test('helper reconnect retains its pairing password and drops queued work from the lost connection', async () => {
   let finish, operations = 0, current = { ...snapshot(), recordState: 'recording' };
   const f = fixture({ getSnapshot: () => current, execute: async () => { operations++; return new Promise(resolve => { finish = resolve; }); } });

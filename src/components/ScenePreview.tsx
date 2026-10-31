@@ -27,7 +27,7 @@ export const ScenePreview = memo(function ScenePreview({
   const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
   const remainder = (seconds % 60).toString().padStart(2, "0");
   const zoom = scene.layout === "camera-zoom"
-    ? Math.max(1, Math.min(2.5, scene.zoom ?? 1.6)) : 1;
+    ? Math.max(1, Math.min(2.5, scene.zoom ?? 1.4)) : 1;
   const layers = appearance.layers.filter((layer) => layer.visible);
 
   return (
