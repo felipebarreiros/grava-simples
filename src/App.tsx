@@ -60,6 +60,9 @@ import { MuteNotice } from "./components/MuteNotice";
 import { GlobalSearch, type SearchResult } from "./components/GlobalSearch";
 import { RecordingDetail } from "./components/RecordingDetail";
 import { RecordingThumbnail } from "./components/RecordingThumbnail";
+import { RemoteControl } from "./components/RemoteControl";
+import { sceneSourcesReady, studioRemoteSnapshot } from "./remote/studioAdapter";
+import type { RemoteCommand, RemoteCommandResult } from "./remote/types";
 import { CloudRecordingActions, CloudRecordingStorage, useCloudRecordingLibrary } from "./components/CloudRecordingStorage";
 import { setLocalAccount, getLocalAccount } from "./projects/keys";
 import { deleteCloudRecording, listCloudRecordings, materializeRecordingFile, openCloudRecording } from "./recordings/cloudStorage";
@@ -240,6 +243,7 @@ export default function App() {
   const autoAttempt = useRef("");
   const requestedScene = useRef("");
   const preparationLock = useRef(false);
+  const remoteCommandLock = useRef(false);
   const appliedSceneKey = useRef("");
   const backgroundBusy = useRef(false);
   const coverTimes = useRef<Record<string, number>>({});
@@ -806,13 +810,14 @@ export default function App() {
   function changeAppearance(next: SceneAppearance) {
     if (transitioning) return;
     const owner = currentProject.current;
+    const sceneId = owner.selectedSceneId;
     const changed = normalizeProjectSources({
       ...owner,
       scenes: owner.scenes.map((item) =>
-        item.id === scene.id ? { ...item, appearance: next } : item,
+        item.id === sceneId ? { ...item, appearance: next } : item,
       ),
     });
-    const visual = changed.scenes.find(item => item.id === scene.id)?.appearance;
+    const visual = changed.scenes.find(item => item.id === sceneId)?.appearance;
     if (visual) session.current?.setSceneAppearance(visual);
     currentProject.current = changed;
     setProject(changed);
@@ -1099,6 +1104,74 @@ export default function App() {
       trackCreatorEvent('capture_ready', { ...recordingSettings(config), stage: 'record_intent', duration_ms: elapsedRecordingOperation(captureStarted) });
     }
     await start();
+  }
+  function remoteSnapshot() {
+    const studio = session.current;
+    return studioRemoteSnapshot(currentProject.current, studio?.getSnapshot(), {
+      available: page === "studio" && !!studio,
+      busy: transitioning || remoteCommandLock.current,
+      matches,
+      exporting,
+      hasSource: id => studio?.hasLayerSource(id) === true,
+    });
+  }
+  async function executeRemote(command: RemoteCommand): Promise<RemoteCommandResult> {
+    const studio = session.current, owner = currentProject.current;
+    if (!studio || page !== "studio" || remoteCommandLock.current)
+      return { ok: false, error: "Abra o projeto no computador para usar o controle." };
+    const before = studio.getSnapshot();
+    if (transitioning || before.state === "preparing" || before.state === "stopping")
+      return { ok: false, error: "Aguarde o estúdio concluir a operação atual." };
+    remoteCommandLock.current = true;
+    try {
+      if (command.type === "startRecording") {
+        if (before.state !== "recording") {
+          const current = owner.scenes.find(item => item.id === owner.selectedSceneId);
+          if (!current || !matches || exporting || !["ready", "complete"].includes(before.state)
+            || !sceneSourcesReady(current, before, id => studio.hasLayerSource(id)))
+            throw new Error("Conecte e prepare as fontes no computador antes de gravar pelo celular.");
+          flushPendingProject();
+          await start();
+          if (studio.getSnapshot().state !== "recording") throw new Error("Não foi possível iniciar a gravação. Confira o computador.");
+        }
+      } else if (command.type === "stopRecording") {
+        if (before.state === "recording") await stop();
+      } else if (command.type === "selectScene") {
+        const target = owner.scenes.find(item => item.id === command.sceneId);
+        if (!target) throw new Error("Esta cena não está mais neste projeto.");
+        const visual = normalizeSceneAppearance(target.layout, target.appearance);
+        if (!["ready", "complete", "recording"].includes(before.state)
+          || !sceneSourcesReady({ ...target, appearance: visual }, before, id => studio.hasLayerSource(id))
+          || (before.config?.microphoneDeviceId ?? "") !== (visual.microphoneDeviceId ?? "")
+          || visual.layers.some(layer => layer.visible && layer.kind === "camera" && !layer.sourceId
+            && (before.config?.cameraDeviceId ?? "") !== (visual.cameraDeviceId ?? "")))
+          throw new Error("Conecte as fontes e os dispositivos desta cena no computador primeiro.");
+        if (!(await chooseScene(command.sceneId))) throw new Error("Não foi possível trocar a cena. Confira o computador.");
+      } else if (command.type === "setSourceVisible") {
+        const target = owner.scenes.find(item => item.id === command.sceneId);
+        const visual = target && normalizeSceneAppearance(target.layout, target.appearance);
+        const layer = visual?.layers.find(item => item.id === command.layerId);
+        if (!target || !visual || !layer) throw new Error("Esta fonte não está mais na cena.");
+        const changed = { ...visual, layers: visual.layers.map(item => item.id === command.layerId ? { ...item, visible: command.visible } : item) };
+        if (target.id === owner.selectedSceneId) {
+          if (command.visible && !sceneSourcesReady({ ...target, appearance: changed }, before, id => studio.hasLayerSource(id)))
+            throw new Error("Conecte esta fonte no computador antes de exibi-la.");
+          changeAppearance(changed);
+        } else update({ ...owner, scenes: owner.scenes.map(item => item.id === target.id ? { ...item, appearance: changed } : item) });
+        if (currentProject.current.scenes.find(item => item.id === target.id)?.appearance?.layers
+          .find(item => item.id === layer.id)?.visible !== command.visible)
+          throw new Error("Não foi possível salvar a visibilidade da fonte.");
+      } else if (command.type === "setMicrophoneMuted") {
+        const current = owner.scenes.find(item => item.id === owner.selectedSceneId);
+        if (!current) throw new Error("Esta cena não está mais neste projeto.");
+        changeAppearance({ ...normalizeSceneAppearance(current.layout, current.appearance), microphoneMuted: command.muted });
+      }
+      if (session.current !== studio || currentProject.current.id !== owner.id)
+        throw new Error("O projeto foi fechado no computador.");
+      return { ok: true };
+    } catch (failure) {
+      return { ok: false, error: message(failure) };
+    } finally { remoteCommandLock.current = false; }
   }
   function targetVisualLayer(
     requested: string | null,
@@ -2159,6 +2232,10 @@ export default function App() {
               </div>
             )}
             <div className="header-actions">
+              {page === "studio" && project.id && (
+                <RemoteControl key={`${userId}:${project.id}`} projectId={project.id} ownerId={userId ?? undefined}
+                  getSnapshot={remoteSnapshot} execute={executeRemote} />
+              )}
               {page === "studio" && tab === "studio" && recordButton}
               <IconButton
                 label="Buscar"

@@ -97,7 +97,7 @@ export class RemoteController {
         this.receive(message, generation);
       } else if (message.type === 'error') {
         this.update({ status: message.code === 'studio-in-use' ? 'in-use' : 'error', pairing: undefined,
-          error: message.code === 'studio-in-use' ? 'Outro projeto já está conectado neste computador. Feche-o para usar este projeto.' : 'Não foi possível conectar ao aplicativo neste computador.' });
+          error: message.code === 'studio-in-use' ? 'Outra aba do estúdio já está conectada neste computador. Feche-a para usar este projeto.' : 'Não foi possível conectar ao aplicativo neste computador.' });
         this.stopSocket();
       }
     };

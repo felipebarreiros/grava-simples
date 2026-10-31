@@ -22,7 +22,7 @@ const statusText = (state: RemoteControlState): string => {
     case 'permission-required': return 'Permita a conexão com este computador';
     case 'permission-denied': return 'Acesso à rede local bloqueado';
     case 'helper-missing': return 'Aplicativo de conexão não encontrado';
-    case 'in-use': return 'Outro projeto está conectado';
+    case 'in-use': return 'Outra aba do estúdio está conectada';
     case 'error': return 'Não foi possível conectar';
     default: return 'Controle desativado neste projeto';
   }
