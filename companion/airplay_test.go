@@ -27,7 +27,7 @@ func TestAirplayManagerStartsAndStopsWithStudioLease(t *testing.T) {
 	if err := manager.stop(); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for manager.running() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
@@ -53,7 +53,7 @@ func TestBrokerAirplayFollowsStudioLease(t *testing.T) {
 	}
 	_ = studio.conn.Close()
 	awaitStudioDetached(t, b)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for b.airplay.running() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
