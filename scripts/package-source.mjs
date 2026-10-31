@@ -27,8 +27,8 @@ for (const dependency of ['aria-hidden', 'react-remove-scroll', 'react-remove-sc
   const license = readdirSync(directory).find(name => /^licen[cs]e(?:\.|$)/i.test(name));
   if (license) notices.push(`\n=== ${dependency} ===\n${readFileSync(resolve(directory, license), 'utf8')}`);
 }
-const wsLicense = resolve(root, 'node_modules/ws/LICENSE');
-if (existsSync(wsLicense)) notices.push(`\n=== ws (MIT) ===\n${readFileSync(wsLicense, 'utf8')}`);
+const companionLicense = resolve(root, 'companion/vendor/github.com/gorilla/websocket/LICENSE');
+if (existsSync(companionLicense)) notices.push(`\n=== Local Wi-Fi companion: Gorilla WebSocket (BSD-2-Clause) ===\nCorresponding source: /companion/companion-source.zip\n${readFileSync(companionLicense, 'utf8')}`);
 const shadcnLicense = resolve(root, 'vendor/ui/SHADCN-LICENSE.txt');
 if (existsSync(shadcnLicense)) notices.push(`\n=== shadcn/ui component sources (MIT, CSS adaptation) ===\n${readFileSync(shadcnLicense, 'utf8')}`);
 const simdeLicense = resolve(root, 'vendor/obs/deps/simde/COPYING');
@@ -40,7 +40,7 @@ if (existsSync(exportLicense)) notices.push(`\n=== FFmpeg minimal local AAC expo
 const exportWrapperLicense = resolve(root, 'vendor/export/FFMPEGWASM-LICENSE');
 if (existsSync(exportWrapperLicense)) notices.push(`\n=== ffmpeg.wasm wrapper (MIT) ===\n${readFileSync(exportWrapperLicense, 'utf8')}`);
 writeFileSync(resolve(destination, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, ''));
-const entries = ['COPYING', 'README.md', '.env.example', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'tsconfig.server.json', 'vercel.json', 'vite.config.ts', 'playwright.config.ts', 'src', 'api', 'server', 'db', 'engine', 'vendor', 'scripts', 'tests', 'docs', 'public/engine', 'public/export', 'public/source/ffmpeg-export-source.tar.gz', 'public/fonts', 'public/scenes', 'public/favicon.svg', 'public/source/THIRD-PARTY-NOTICES.txt'].filter(entry => existsSync(resolve(root, entry)));
+const entries = ['COPYING', 'README.md', '.env.example', 'package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'tsconfig.server.json', 'vercel.json', 'vite.config.ts', 'playwright.config.ts', 'src', 'api', 'server', 'db', 'companion', 'engine', 'vendor', 'scripts', 'tests', 'docs', 'public/engine', 'public/export', 'public/source/ffmpeg-export-source.tar.gz', 'public/fonts', 'public/scenes', 'public/favicon.svg', 'public/source/THIRD-PARTY-NOTICES.txt'].filter(entry => existsSync(resolve(root, entry)));
 const archive = resolve(destination, 'grava-simples-source.tar.gz');
 execFileSync('tar', ['--exclude=engine/build-logs', '--exclude=*.webm', '--exclude=*.mp4', '-czf', archive + '.tmp', ...entries], { cwd: root });
 renameSync(archive + '.tmp', archive);

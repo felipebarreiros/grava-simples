@@ -1,0 +1,33 @@
+.remote-control-trigger.ui-button { position: relative; gap: 6px; }
+.remote-control-trigger.is-active { border-color: #9c5a3d; color: #ffd9c8; }
+.remote-trigger-indicator { width: 6px; height: 6px; border-radius: 50%; background: #e5a65d; }
+.remote-trigger-indicator.is-connected { background: #78c7a1; }
+.remote-control-modal.studio-modal { max-width: 510px; }
+.remote-control-content { display: grid; gap: 18px; }
+.remote-connection-status { display: flex; gap: 10px; align-items: center; padding: 12px 14px; color: #c2bdb6; background: #282625; border: 1px solid #403a35; border-radius: 10px; }
+.remote-connection-status strong { font-size: 12px; font-weight: 500; }
+.remote-connection-status.connected { color: #a6e7c6; border-color: #355847; background: #23332b; }
+.remote-connection-status.reconnecting, .remote-connection-status.expired { color: #efc18c; }
+.remote-control-intro { color: #ece7df; font-size: 13px; line-height: 1.7; }
+.remote-control-note, .remote-control-boundary { color: #b0aaa3; font-size: 11px; line-height: 1.7; }
+.remote-control-error { padding: 10px 12px; background: #3b2723; border: 1px solid #704237; color: #ffd1bf; border-radius: 8px; font-size: 12px; line-height: 1.6; }
+.remote-setup-steps { margin: 0; padding-left: 19px; color: #d7d1c9; font-size: 12px; line-height: 1.7; }
+.remote-setup-steps li + li { margin-top: 7px; }
+.remote-setup-steps strong { font-weight: 500; color: #fff5eb; }
+.remote-connection-fields { display: grid; gap: 14px; }
+.remote-connection-field { display: grid; gap: 7px; min-width: 0; color: #c5beb6; font-size: 11px; }
+.remote-connection-field > div { display: flex; align-items: center; gap: 4px; }
+.remote-connection-field .ui-input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; min-width: 0; }
+.remote-connection-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.remote-control-content > .ui-button { justify-self: start; }
+.remote-install { display: grid; gap: 9px; padding: 14px; border: 1px solid #403a35; border-radius: 10px; background: #252322; }
+.remote-install > strong { font-size: 12px; color: #e3dcd4; font-weight: 500; }
+.remote-install > p { font-size: 11px; line-height: 1.7; color: #b0aaa3; }
+.remote-downloads, .remote-connection-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.remote-other-addresses { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10px; color: #b0aaa3; }
+.remote-other-addresses .ui-button { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; }
+.remote-control-boundary { padding-top: 14px; border-top: 1px solid #36322e; font-size: 10px; }
+.remote-spinner { animation: remote-spin 1s linear infinite; }
+@keyframes remote-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .remote-spinner { animation: none; } }
+@media (max-width: 700px) { .remote-control-trigger > span { display: none; } }
