@@ -7,44 +7,46 @@
   "minimumGoVersion": "1.26.8",
   "source": {
     "url": "/companion/companion-source.zip",
-    "sha256": "6bd86ee09dc5a81b26a30f97b71c5f27f165720bb22f2e77a1b923cc1b25f791"
+    "sha256": "29b792611bc6845f34ecd8bcca94397106836aeb336b76c7e27668e41806fb7a"
   },
   "artifacts": [
     {
       "platform": "macos",
       "url": "/companion/gravasimples-macos.zip",
-      "bytes": 5944283,
-      "sha256": "7c690ac0f2c87f475a01c15409e097a1484dea1c7d5ff98244b25903615adfaa",
+      "bytes": 6009016,
+      "sha256": "c6f69551d0fb077d4b3e5bc813ca1b5860fc4829f0e5c032d43587ed6bbf6388",
       "binaries": [
         {
           "arch": "arm64",
           "file": "binaries/gravasimples-companion-darwin-arm64",
-          "sha256": "0ef6a03a8bbe7b5e62e68c5a7f68251123ab317074765afd6c207f359ef6997e"
+          "sha256": "d706b1b90c14599305dcc1b945a56d9e1aa1ecde4a526857b777f005f56e0e00"
         },
         {
           "arch": "amd64",
           "file": "binaries/gravasimples-companion-darwin-amd64",
-          "sha256": "ff8191de0d8ce3e72ac05b8763b8f2d956e8f6c419f9b4d2f14da9aedead7a0f"
+          "sha256": "15b7b8e7cc215e1fd7327946801d7027d0baf3d1704ed6f56528047c94cc773d"
         }
-      ]
+      ],
+      "airplay": false
     },
     {
       "platform": "windows",
       "url": "/companion/gravasimples-windows.zip",
-      "bytes": 5893217,
-      "sha256": "daa1895cab431d029b9ad8ad94bfa26af538d2c4d78cc6957e181090c377f26a",
+      "bytes": 5984051,
+      "sha256": "32e5e6bfc1cc1a5ecc42702b8a1d7c023ee9f0947fff81cd20d0ed74e3cff598",
       "binaries": [
         {
           "arch": "arm64",
           "file": "binaries/GravaSimplesCompanion-windows-arm64.exe",
-          "sha256": "73219c7aa09ef515c67bc3e14559f3c2621b9090aa1e61b02b399d987a03e255"
+          "sha256": "984a15a2cb07ea96159832c6f21a880c664c5c19f6313a4666af43b3e74d812f"
         },
         {
           "arch": "amd64",
           "file": "binaries/GravaSimplesCompanion-windows-amd64.exe",
-          "sha256": "ae7787456750adfdb44bc051d6b8be93bfebacd5db71a774927524eabb11804b"
+          "sha256": "85732f1004c9974d08215178661cfba8c191805a0383ba38b8f55ba0e8822bc7"
         }
-      ]
+      ],
+      "airplay": false
     }
   ]
 }

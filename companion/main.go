@@ -30,6 +30,8 @@ func run() int {
 	}
 	listen := flag.String("listen", "0.0.0.0:4455", "local OBS control listen address")
 	config := flag.String("config", path, "private pairing configuration path")
+	airplayBin := flag.String("airplay-bin", defaultAirplayCommand(), "optional AirPlay receiver executable")
+	airplayName := flag.String("airplay-name", "GravaSimples", "AirPlay receiver name advertised while the studio is open")
 	stop := flag.Bool("stop", false, "stop the installed companion for this user")
 	showVersion := flag.Bool("version", false, "print companion version")
 	var origins originFlags
@@ -53,6 +55,7 @@ func run() int {
 		return 1
 	}
 	broker := newBroker(cfg, origins)
+	broker.airplay = newAirplayManager(*airplayBin, *airplayName)
 	broker.port = listener.Addr().(*net.TCPAddr).Port
 	server := &http.Server{Handler: broker, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 	done := make(chan struct{})

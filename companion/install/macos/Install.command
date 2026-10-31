@@ -19,6 +19,11 @@ AGENT_DIR="$HOME/Library/LaunchAgents"
 AGENT_PATH="$AGENT_DIR/com.gravasimples.companion.plist"
 AGENT_DOMAIN="gui/$(id -u)"
 EXECUTABLE="$APP_DIR/gravasimples-companion"
+AIRPLAY_DIR="$APP_DIR/airplay"
+AIRPLAY_EXECUTABLE="$AIRPLAY_DIR/Popyachsa AirPlay.app/Contents/MacOS/popyachsa-airplay"
+if [ ! -f "$SCRIPT_DIR/airplay/Popyachsa AirPlay.app/Contents/MacOS/popyachsa-airplay" ]; then
+  AIRPLAY_EXECUTABLE="$AIRPLAY_DIR/uxplay"
+fi
 ARCH="$(uname -m)"
 if [ "$(/usr/sbin/sysctl -in sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then ARCH="arm64"; fi
 case "$ARCH" in
@@ -40,6 +45,14 @@ if [ -x "$EXECUTABLE" ]; then "$EXECUTABLE" --stop --config "$CONFIG_PATH" >/dev
 /bin/cp "$PAYLOAD" "$EXECUTABLE.new"
 /bin/chmod 755 "$EXECUTABLE.new"
 /bin/mv -f "$EXECUTABLE.new" "$EXECUTABLE"
+/bin/mkdir -p "$AIRPLAY_DIR"
+if [ -d "$SCRIPT_DIR/airplay/Popyachsa AirPlay.app" ]; then
+  /bin/cp -R "$SCRIPT_DIR/airplay/Popyachsa AirPlay.app" "$AIRPLAY_DIR/"
+elif [ -f "$SCRIPT_DIR/airplay/uxplay" ]; then
+  /bin/cp "$SCRIPT_DIR/airplay/uxplay" "$AIRPLAY_EXECUTABLE.new"
+  /bin/chmod 755 "$AIRPLAY_EXECUTABLE.new"
+  /bin/mv -f "$AIRPLAY_EXECUTABLE.new" "$AIRPLAY_EXECUTABLE"
+fi
 /bin/cp "$SCRIPT_DIR/Uninstall.command" "$APP_DIR/Uninstall.command"
 /bin/chmod 755 "$APP_DIR/Uninstall.command"
 for document in COPYING.txt THIRD-PARTY-NOTICES.txt LEIA-ME.txt; do
@@ -61,6 +74,7 @@ cat > "$AGENT_PATH" <<PLIST
   <key>ProgramArguments</key><array>
     <string>$(xml_escape "$EXECUTABLE")</string>
     <string>--config</string><string>$(xml_escape "$CONFIG_PATH")</string>
+    <string>--airplay-bin</string><string>$(xml_escape "$AIRPLAY_EXECUTABLE")</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

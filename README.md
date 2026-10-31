@@ -1,10 +1,12 @@
 # GravaSimples studio
 
-A browser recording studio producing landscape and portrait video files from the same session, saved locally first with optional private cloud backup. The Hotmart/Launchpad-inspired interface fills the window with warm dark surfaces, orange actions, projects, linked previews, and scene controls. A public home page introduces the product; Clerk authentication is required to open the studio. Automatic transcription uses an optional authenticated Vercel API. OBS Blade phone control connects over local Wi-Fi through the installed Mac/Windows companion; AirPlay and rendered video cuts remain deferred.
+A browser recording studio producing landscape and portrait video files from the same session, saved locally first with optional private cloud backup. The Hotmart/Launchpad-inspired interface fills the window with warm dark surfaces, orange actions, projects, linked previews, and scene controls. A public home page introduces the product; Clerk authentication is required to open the studio. Automatic transcription uses an optional authenticated Vercel API. OBS Blade phone control connects over local Wi-Fi through the installed Mac/Windows companion. The AirPlay receiver is a separate optional companion process that advertises only while a studio tab is open.
 
 ## OBS Blade phone control
 
 Install the local companion once on Mac or Windows and allow the browser to connect to this computer. Opening the studio then attaches automatically. Configure the existing OBS Blade app with the computer’s Wi-Fi IP, port and persistent password under **Celular**. Control scenes, individual layer visibility, microphone mute, and start/stop of both recordings. No remote-control Vercel API, Redis, extension or cloud relay is used. Prepare camera/screen permissions on the computer first. The computer keeps recording if the phone disconnects. See [installation, pairing and validation](docs/OBS_BLADE.md).
+
+When the AirPlay-enabled installer is installed, opening a studio tab also starts a local AirPlay receiver named **GravaSimples**. Select it from iPad Control Center → **Screen Mirroring**, then choose its native window once as the studio screen source. Closing the studio stops the receiver. See [iPad mirroring](docs/AIRPLAY.md).
 
 ## Recording review
 

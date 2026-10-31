@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Download, Eye, EyeOff, LoaderCircle, RotateCcw, Smartphone, Unplug, Wifi } from 'lucide-react';
+import { Check, Copy, Download, Eye, EyeOff, LoaderCircle, MonitorUp, RotateCcw, Smartphone, Unplug, Wifi } from 'lucide-react';
 import { RemoteController, type RemoteControlState } from '../remote/controller';
 import type { RemoteCommand, RemoteCommandResult, RemoteSnapshot } from '../remote/types';
 import { Button } from './ui/button';
@@ -110,6 +110,10 @@ export function RemoteControl(props: RemoteControlProps) {
           </div>
           {copyError && <p className="remote-control-note" role="status">{copyError}</p>}
           <p className="remote-control-note">Configure o OBS Blade uma vez. A senha fica salva apenas no aplicativo do computador, que reconecta quando você abre o estúdio. Compartilhe-a somente com quem pode operar este projeto.</p>
+          {state.pairing.airplay?.available && <section className="remote-airplay-status" aria-label="Espelhamento do iPad">
+            <div className="remote-connection-status waiting"><MonitorUp size={18} /><strong>{state.pairing.airplay.running ? 'Espelhamento do iPad disponível' : 'Preparando espelhamento do iPad…'}</strong></div>
+            <p className="remote-control-note">No iPad, abra a Central de Controle, toque em <strong>Espelhar Tela</strong> e escolha <strong>{state.pairing.airplay.name}</strong>. A janela recebida pode ser selecionada como fonte de tela no estúdio.</p>
+          </section>}
           <div className="remote-connection-actions">
             <Button variant="outline" onClick={() => { setRevealPassword(false); controller.current?.stop(); }}><Unplug size={16} />Desconectar deste projeto</Button>
             <Button variant="ghost" size="sm" onClick={() => { setRevealPassword(false); controller.current?.resetPairing(); }}><RotateCcw size={14} />Redefinir pareamento</Button>
