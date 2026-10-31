@@ -3460,7 +3460,7 @@ export default function App() {
           </section>
         </Modal>
       )}
-      {recordCountdown !== null && <RecordingCountdown seconds={recordCountdown} onCancel={() => cancelPendingRecording()} />}
+      <RecordingCountdown seconds={recordCountdown} onCancel={() => cancelPendingRecording()} />
       <CreatorFeedback available={!busy && !exporting && !working && !resultOpen && !settingsOpen && !technicalOpen && !sourcePicker && !projectEditor && !sceneEditor && !takeEditor && !deleteTarget && !searchOpen && page === 'studio'} userId={userId ?? null} />
     </div>
   );
