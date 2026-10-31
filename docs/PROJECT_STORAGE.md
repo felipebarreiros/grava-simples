@@ -1,7 +1,7 @@
-# Local projects, scenes, and recording library · 0.3.0
+# Projects, scenes, and recording storage
 
 `src/projects/store.ts` stores a versioned project catalogue in the browser's
-`grava-simples-workspace-v1` localStorage entry. Each project owns its scenes,
+`grava-simples-workspace-v1:account:<Clerk user ID>` localStorage entry for a signed-in account. Each project owns its scenes,
 selected scene, capture settings, and saved take metadata. Recording bytes stay
 in the existing OPFS recording directory or IndexedDB chunk store; adding a take
 to a project does not copy its video data.
@@ -42,7 +42,7 @@ browser permissions continue to govern access.
 
 Sidebar collapse is a separate browser preference in `grava-sidebar-collapsed`;
 it does not change project contents. Project metadata stays at workspace format
-version 1 with scene revision 2; those migration markers are independent of the
+version 1 with scene revision 3; those migration markers are independent of the
 application's 0.3.0 release number.
 
 `src/projects/assets.ts` persists uploaded scene-background images in a separate
@@ -56,14 +56,9 @@ its background images and preserves images still used by other projects. Immutab
 asset IDs avoid rewriting an image used by a duplicate. Deleting the final project
 that references a shared image also removes the previously borrowed image.
 
-This is local browser persistence, scoped to the application's origin. It does
-not add account storage, cloud synchronization, or a server database. The existing
-browser storage quota and browser data-clearing behavior apply.
+Local browser persistence is scoped to the origin and signed-in account. Recording bytes, scene assets, transcripts and markers use the same account namespace. Optional cloud recording backup adds an owner-scoped Supabase Postgres catalogue and private Vercel Blob media; scene configuration and its assets remain local. See [cloud storage and cache limits](CLOUD_STORAGE.md). Browser storage quota and data-clearing behavior still apply to local-only files.
 
-Completed output videos and uploaded scene backgrounds persist. Live capture
-permissions and imported screen/media-source images/videos are session resources;
-those input files must be selected again after reopening the project or reloading
-the page. The scene-background uploader is separate and retains its image Blob.
+Completed output videos and uploaded scene/layer media persist in the account's browser namespace. Camera and display-sharing permissions remain session resources; reconnect screen capture explicitly after reopening. Stored image/video source assets can reopen from their immutable local Blob references.
 
 `tests/projects.spec.ts` exercises migration and independent project settings,
 OPFS and IndexedDB file restoration across a real browser reload, per-project
@@ -84,8 +79,16 @@ Geometry edits update the live model immediately, debounce storage writes briefl
 
 `ProjectTake.thumbnail` and `thumbnailAtSeconds` cache a bounded JPEG decoded from the recording at 5% of its duration, falling back to the first frame. Take metadata is committed before best-effort thumbnail generation. Existing takes are backfilled near the library viewport through one decoder at a time. Decode failures preserve the take and its downloads; thumbnail writes merge into the latest catalogue to preserve concurrent renames.
 
-Imported timed transcripts live separately under `grava-simples-transcript-v1:<takeId>`. They retain imported cue times, source filename, corrected text, and the original wording of corrected cues. `src/recordings/transcript.ts` validates SRT/WebVTT input and exports TXT/SRT/VTT. Corrections do not alter video bytes. Timestamped notes live under `grava-recording-review-v1:<takeId>`. Recording/project deletion and app-wide recording cleanup remove these entries too.
+Imported timed transcripts live separately under account-scoped `grava-simples-transcript-v1:<takeId>` keys. They retain imported cue times, source filename, corrected text, and the original wording of corrected cues. `src/recordings/transcript.ts` validates SRT/WebVTT input and exports TXT/SRT/VTT. Corrections do not alter video bytes. Timestamped notes live under account-scoped `grava-recording-review-v1:<takeId>` keys. Recording/project deletion and app-wide recording cleanup remove these entries too.
 
-Detail URLs use `#project/<projectId>/recording/<takeId>`. These identify local catalogue entries, not remotely shareable recordings. Restoring a take creates fresh object URLs, and closing the recording releases them. Playback requires neither camera permission nor a functioning capture engine.
+Detail URLs use `#project/<projectId>/recording/<takeId>`. These identify the authenticated account's catalogue entries, not public share links. Finalized cloud metadata can restore those entries on another device. Restoring a take creates fresh object URLs, and closing the recording releases them. Playback requires neither camera permission nor a functioning capture engine.
 
-Automatic transcription optionally uploads one saved format to private Blob and stores an account-bound asynchronous job in Redis. Completed words and phrase cues are copied into the existing local transcript entry, retaining real source times. Corrections preserve those original words. Approved replacement intent and a small cloud-job receipt persist per account/recording, so reloads apply a requested replacement once while retaining later corrections. Deleting a take/project with a cloud receipt requests remote cancellation/cleanup before removing local media. Scheduled cleanup covers abandoned jobs. This adds temporary cloud media and job results, rather than cloud synchronization of the local catalogue; see [limits and retention](VERCEL_TRANSCRIPTION.md).
+Automatic transcription optionally uploads one saved format to a separate temporary private Blob store and stores an account-bound asynchronous job in Postgres with forced RLS and atomic quotas. Completed words and phrase cues are copied into the existing local transcript entry, retaining real source times. Corrections preserve those original words. Approved replacement intent and a small cloud-job receipt persist per account/recording, so reloads apply a requested replacement once while retaining later corrections. Deleting a take/project with a cloud receipt requests remote cancellation/cleanup before removing local media. Scheduled cleanup covers abandoned jobs. These temporary inputs have independent retention from permanent recording backups; see [limits and retention](VERCEL_TRANSCRIPTION.md).
+
+## Durable recording backup and bounded cache
+
+`src/recordings/cloudStorage.ts` uploads both originals after an account-bound server reservation, finalizes only after private-object verification, retrieves paginated catalogue metadata and opens short-lived private media URLs. `ProjectTake.cloud` records a server-confirmed backup, rather than the start of an upload. The library can save one recording, opt into backup of subsequent takes, download an offline copy, or release a verified local copy. Existing recordings are not silently uploaded.
+
+`cloudCache.ts` targets 1 GB of recording cache, reduces that budget under browser quota pressure, and evicts least recently used inactive copies only when a fresh authenticated catalogue confirms ready media with matching landscape and portrait byte counts. Unbacked, active and unverified recordings are preserved; this is not a hard limit on all browser data. Opening cloud-only recordings streams media rather than persistently caching both videos.
+
+Old unscoped recordings remain intact. An explicit browser-locked import copies legacy media and review data into the current account's namespace and records the claim; it never imports another account's scoped files. A later upload remains explicit. Authored scene settings and scene assets stay local, while recording metadata, both outputs and explicitly saved transcript versions can be retrieved across devices. Full API, access-control and cleanup details are in [CLOUD_STORAGE.md](CLOUD_STORAGE.md).

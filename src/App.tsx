@@ -60,6 +60,10 @@ import { MuteNotice } from "./components/MuteNotice";
 import { GlobalSearch, type SearchResult } from "./components/GlobalSearch";
 import { RecordingDetail } from "./components/RecordingDetail";
 import { RecordingThumbnail } from "./components/RecordingThumbnail";
+import { CloudRecordingActions, CloudRecordingStorage, useCloudRecordingLibrary } from "./components/CloudRecordingStorage";
+import { setLocalAccount, getLocalAccount } from "./projects/keys";
+import { deleteCloudRecording, listCloudRecordings, materializeRecordingFile, openCloudRecording } from "./recordings/cloudStorage";
+import { touchCachedRecording } from "./recordings/cloudCache";
 import { deleteCloudTranscription, hasCloudTranscription } from './recordings/cloudTranscription';
 import {
   defaultSceneAppearance,
@@ -80,6 +84,7 @@ import {
   importLegacyRecordings,
   listProjectTakes,
   loadProjects,
+  mergeCloudRecordings,
   renameProjectTake,
   restoreProjectTake,
   saveProject,
@@ -184,6 +189,8 @@ function reopenProject(project: Project): Project {
 }
 export default function App() {
   const { getToken, userId } = useAuth();
+  // AuthApplication remounts App when the verified account changes.
+  setLocalAccount(userId ?? null);
   const [{ hashProjectId, hashTakeId }] = useState(() => {
     const segments = location.hash.split("/");
     return { hashProjectId: segments[0] === "#project" ? segments[1] : "", hashTakeId: segments[0] === "#project" && segments[2] === "recording" ? segments[3] : "" };
@@ -368,6 +375,7 @@ export default function App() {
     setProjects(loadProjects());
     setTakes(listProjectTakes());
   }
+  const cloudLibrary = useCloudRecordingLibrary(takes, projects, [activeTakeId, result?.id ?? ""].filter(Boolean), busy || exporting, refresh);
   function flushPendingProject() {
     if (!projectSaveTimer.current) return;
     clearTimeout(projectSaveTimer.current);
@@ -412,6 +420,7 @@ export default function App() {
     const studio = new StudioSession({
       engine: wrapped,
       onEvent(event) {
+        if (getLocalAccount() !== userId) return;
         setSnapshot(event);
         const activity = recordingTelemetry.current;
         if (event.error && (activity.phase === 'recording' || activity.phase === 'stopping') && !activity.failed) {
@@ -512,6 +521,7 @@ export default function App() {
       void studio?.dispose();
       for (const url of [...restoredUrls.current, ...exportUrls.current])
         URL.revokeObjectURL(url);
+      if (getLocalAccount() === userId) setLocalAccount(null);
     };
   }, []);
 
@@ -927,9 +937,10 @@ export default function App() {
     for (const url of [...restoredUrls.current, ...exportUrls.current]) URL.revokeObjectURL(url);
     restoredUrls.current = [];
     exportUrls.current = [];
+    setDownloadState({});
     await studio?.dispose();
   }
-  async function openProject(item: Project, selectedSceneId?: string) {
+  async function openProject(item: Project, selectedSceneId?: string, destination: "studio" | "recordings" = "studio") {
     if (busy) return;
     flushPendingProject();
     item = loadProjects().find((project) => project.id === item.id) ?? item;
@@ -953,7 +964,7 @@ export default function App() {
       }
     }
     setPage("studio");
-    setTab("studio");
+    setTab(destination);
     setSidebarOpen(false);
     setError("");
     history.replaceState(
@@ -1622,6 +1633,7 @@ export default function App() {
       if (deleteTarget.kind === "project") {
         const id = deleteTarget.project.id;
         for (const take of listProjectTakes(id)) {
+          if (take.cloud) await deleteCloudRecording(take.cloud.id, getToken);
           if (userId && hasCloudTranscription(userId, take.id)) await deleteCloudTranscription(take.id, getToken, undefined, userId);
         }
         await closeProjectSession();
@@ -1635,6 +1647,7 @@ export default function App() {
         setPage("projects");
         history.replaceState(null, "", `${location.pathname}${location.search}`);
       } else {
+        if (deleteTarget.take.cloud) await deleteCloudRecording(deleteTarget.take.cloud.id, getToken);
         if (userId && hasCloudTranscription(userId, deleteTarget.take.id)) await deleteCloudTranscription(deleteTarget.take.id, getToken, undefined, userId);
         await deleteProjectTake(deleteTarget.take.id);
         setTakeEditor(null);
@@ -1758,7 +1771,9 @@ export default function App() {
       if (!owner) throw new Error("O projeto desta gravação não está mais disponível.");
       await closeProjectSession();
       setDownloadState({});
-      const restored = await restoreProjectTake(take);
+      let restored: RecordingResult;
+      try { restored = await restoreProjectTake(take); touchCachedRecording(take.id); }
+      catch (failure) { if (!take.cloud) throw failure; restored = await openCloudRecording(take, getToken); }
       restoredUrls.current = [restored.landscape.url, restored.portrait.url];
       currentProject.current = owner;
       setProject(owner);
@@ -1788,21 +1803,32 @@ export default function App() {
   }
   async function closeRecording() {
     if (exporting || openingTake.current) return;
-    await openProject(currentProject.current);
-    setTab("recordings");
+    await openProject(currentProject.current, undefined, "recordings");
   }
   useEffect(() => {
     if (restoredInitialTake.current) return;
     restoredInitialTake.current = true;
     if (!hashTakeId) return;
-    const take = listProjectTakes().find((item) => item.id === hashTakeId && item.projectId === hashProjectId);
-    if (take) void openTake(take, true);
-    else {
-      setError("Esta gravação não está disponível neste navegador.");
-      setPage("studio");
-      setTab("recordings");
-      history.replaceState(null, "", `${location.pathname}${location.search}#project/${project.id}`);
-    }
+    let cancelled = false;
+    void (async () => {
+      let take = listProjectTakes().find((item) => item.id === hashTakeId && item.projectId === hashProjectId);
+      if (!take) {
+        try {
+          const remote = await listCloudRecordings(getToken);
+          if (cancelled) return;
+          mergeCloudRecordings(remote.recordings); refresh();
+          take = listProjectTakes().find((item) => item.id === hashTakeId && item.projectId === hashProjectId);
+        } catch { /* Missing cloud configuration keeps the local library available. */ }
+      }
+      if (cancelled) return;
+      if (take) await openTake(take, true);
+      else {
+        setError('Esta gravação não está disponível nesta conta ou neste navegador.');
+        setPage('studio'); setTab('recordings');
+        history.replaceState(null, '', `${location.pathname}${location.search}#project/${project.id}`);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
   recordingNavigation.current = () => {
     const segments = location.hash.split("/");
@@ -1812,15 +1838,14 @@ export default function App() {
       if (take) void openTake(take, true);
       else {
         const owner = loadProjects().find((item) => item.id === segments[1]);
-        if (owner) void openProject(owner).then(() => {
-          setTab("recordings");
+        if (owner) void openProject(owner, undefined, "recordings").then(() => {
           setError("Esta gravação não está disponível neste navegador.");
         });
         else void allProjects();
       }
     } else if (page === "recording") {
       const owner = loadProjects().find((item) => item.id === segments[1]);
-      if (owner) void openProject(owner).then(() => setTab("recordings"));
+      if (owner) void openProject(owner, undefined, "recordings");
       else void allProjects();
     }
   };
@@ -1844,7 +1869,8 @@ export default function App() {
     try {
       const { prepareCompatibleDownload } =
         await import("./media/compatibleExport");
-      const converted = await prepareCompatibleDownload(file, (progress) =>
+      const materialized = await materializeRecordingFile(file, undefined, activeTake?.cloud ? { id: activeTake.cloud.id, getToken } : undefined);
+      const converted = await prepareCompatibleDownload(materialized, (progress) =>
         setDownloadState((current) => ({
           ...current,
           [key]: {
@@ -2099,7 +2125,9 @@ export default function App() {
         asChild
         value={tab}
         onValueChange={(value) => {
-          if (page === "recording") void closeRecording().then(() => setTab(value as "studio" | "recordings"));
+          if (page === "recording") {
+            if (!exporting && !openingTake.current) void openProject(currentProject.current, undefined, value as "studio" | "recordings");
+          }
           else setTab(value as "studio" | "recordings");
         }}
       >
@@ -2175,6 +2203,7 @@ export default function App() {
               )}
             </div>
           )}
+          {(page === "projects" || (page === "studio" && tab === "recordings")) && <CloudRecordingStorage model={cloudLibrary} />}
           {page === "recording" && (activeTake && result ? (
             <RecordingDetail
               key={activeTake.id}
@@ -2182,6 +2211,7 @@ export default function App() {
               projectName={project.name}
               result={result}
               downloads={downloadState}
+              storageActions={<CloudRecordingActions take={activeTake} model={cloudLibrary} />}
               onBack={() => void closeRecording()}
               onRename={() => setTakeEditor(activeTake)}
               onDownload={(file) => void compatible(file)}
@@ -2666,6 +2696,7 @@ export default function App() {
                             <MoreHorizontal size={18} />
                           </IconButton>
                         </div>
+                        <CloudRecordingActions take={take} model={cloudLibrary} />
                       </article>
                     ))}
                   </div>
@@ -2774,8 +2805,8 @@ export default function App() {
                 </dl>
                 {metrics?.warning && <p>{metrics.warning}</p>}
                 <p>
-                  Projetos e vídeos ficam neste navegador. Baixe uma cópia para
-                  guardar fora dele.
+                  As gravações são salvas primeiro neste dispositivo. Use a biblioteca
+                  para confirmar o backup na nuvem e gerenciar as cópias locais.
                 </p>
                 <a href="/source/grava-simples-source.tar.gz" download>
                   Código-fonte e licenças GPL
@@ -3144,8 +3175,8 @@ export default function App() {
         <AlertDialog
           title={deleteTarget.kind === "project" ? "Excluir projeto?" : "Excluir gravação?"}
           description={deleteTarget.kind === "project"
-            ? `O projeto “${deleteTarget.project.name}” e suas gravações serão excluídos deste navegador. Essa ação não pode ser desfeita.`
-            : `A gravação “${deleteTarget.take.name}” será excluída deste navegador. Essa ação não pode ser desfeita.`}
+            ? `O projeto “${deleteTarget.project.name}” e suas gravações serão excluídos deste dispositivo e da nuvem, quando houver backup. Essa ação não pode ser desfeita.`
+            : `A gravação “${deleteTarget.take.name}” será excluída deste dispositivo e da nuvem, quando houver backup. Essa ação não pode ser desfeita.`}
           actionLabel={deleteTarget.kind === "project" ? "Excluir projeto" : "Excluir gravação"}
           pending={deleting}
           onConfirm={() => void confirmDelete()}

@@ -1,86 +1,18 @@
-import { randomUUID } from "node:crypto";
-import { Redis } from "@upstash/redis";
 import { del, head, issueSignedToken, presignUrl } from "@vercel/blob";
-import { ApiError, authenticate, limitBucket } from "./security.ts";
+import { ApiError, authenticate } from "./security.ts";
+import { postgresQuota, postgresRepository } from "./postgres.ts";
 import {
   MAX_AUDIO_MS,
   type JobRepository,
   type ProviderTranscript,
   type TranscriptionDependencies,
-  type TranscriptionJob,
 } from "./types.ts";
-
-const PREFIX = "grava:transcription:v1";
-const INDEX = `${PREFIX}:cleanup`;
-const RECORD_TTL = 7 * 86400;
-const releaseLockScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
-const member = (userId: string, recordingId: string) =>
-  `${userId}:${recordingId}`;
-const jobKey = (userId: string, recordingId: string) =>
-  `${PREFIX}:job:${member(userId, recordingId)}`;
-const lockKey = (userId: string, recordingId: string) =>
-  `${PREFIX}:lock:${member(userId, recordingId)}`;
-
-export function redisRepository(redis: Redis): JobRepository {
-  return {
-    get: (userId, recordingId) =>
-      redis.get<TranscriptionJob>(jobKey(userId, recordingId)),
-    async save(job) {
-      // Index before data: an interrupted write can leave an empty index entry,
-      // which cleanup safely removes; it cannot leave unindexed media metadata.
-      await redis.zadd(INDEX, {
-        score: job.expiresAt,
-        member: member(job.userId, job.recordingId),
-      });
-      await redis.set(jobKey(job.userId, job.recordingId), job, {
-        ex: RECORD_TTL,
-      });
-    },
-    async acquire(userId, recordingId) {
-      const token = randomUUID();
-      const result = await redis.set(lockKey(userId, recordingId), token, {
-        nx: true,
-        ex: 45,
-      });
-      return result === "OK" ? token : null;
-    },
-    async release(userId, recordingId, token) {
-      await redis.eval(
-        releaseLockScript,
-        [lockKey(userId, recordingId)],
-        [token],
-      );
-    },
-    async due(now, limit) {
-      const entries = await redis.zrange<string[]>(INDEX, 0, now, {
-        byScore: true,
-        offset: 0,
-        count: limit,
-      });
-      return entries
-        .map((value) => {
-          const [userId, recordingId] = value.split(":");
-          return { userId, recordingId };
-        })
-        .filter(
-          (value) =>
-            /^user_[\w-]+$/.test(value.userId) &&
-            /^[\w-]{1,128}$/.test(value.recordingId),
-        );
-    },
-    async remove(userId, recordingId) {
-      await redis.del(jobKey(userId, recordingId));
-      await redis.zrem(INDEX, member(userId, recordingId));
-    },
-  };
-}
 
 function configured(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.ASSEMBLYAI_API_KEY &&
       env.BLOB_READ_WRITE_TOKEN &&
-      env.UPSTASH_REDIS_REST_URL &&
-      env.UPSTASH_REDIS_REST_TOKEN,
+      env.DATABASE_URL,
   );
 }
 const unavailableRepository: JobRepository = {
@@ -111,13 +43,6 @@ export function createRuntime(
   env: NodeJS.ProcessEnv = process.env,
 ): TranscriptionDependencies {
   const ready = configured(env);
-  const redis = ready
-    ? new Redis({
-        url: env.UPSTASH_REDIS_REST_URL!,
-        token: env.UPSTASH_REDIS_REST_TOKEN!,
-        retry: false,
-      })
-    : undefined;
   const model = env.ASSEMBLYAI_SPEECH_MODEL || "universal-2";
   if (ready && !["universal-2", "universal-3-5-pro"].includes(model))
     throw new ApiError(
@@ -163,20 +88,8 @@ export function createRuntime(
   return {
     configured: ready,
     authenticate: (request) => authenticate(request, env),
-    async quota(userId, action) {
-      if (!redis)
-        throw new ApiError(
-          503,
-          "Os limites de transcrição não estão configurados.",
-        );
-      await limitBucket(
-        redis,
-        `${PREFIX}:quota:${action}:${userId}`,
-        action === "poll" || action === "delete" ? 60 : 6,
-        action === "poll" || action === "delete" ? 60 : 86400,
-      );
-    },
-    repository: redis ? redisRepository(redis) : unavailableRepository,
+    quota: (userId, action) => postgresQuota(userId, action, env),
+    repository: ready ? postgresRepository(env) : unavailableRepository,
     blob: {
       head: (pathname) =>
         head(pathname, {

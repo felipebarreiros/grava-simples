@@ -1,4 +1,5 @@
 import type { CapacityInfo, Orientation, RecoveryRecording } from './types';
+import { getLocalAccount, scopedStorageName } from '../projects/keys.ts';
 
 const DB_NAME = 'grava-simples-recordings';
 const ROOT_NAME = 'grava-simples-recordings';
@@ -19,8 +20,8 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-async function openDatabase(): Promise<IDBDatabase> {
-  const opening = indexedDB.open(DB_NAME, 1);
+async function openDatabase(account = getLocalAccount()): Promise<IDBDatabase> {
+  const opening = indexedDB.open(scopedStorageName(DB_NAME, account), 1);
   opening.onupgradeneeded = () => {
     opening.result.createObjectStore('sessions', { keyPath: 'id' });
     opening.result.createObjectStore('chunks', { keyPath: ['id', 'orientation', 'sequence'] });
@@ -28,9 +29,9 @@ async function openDatabase(): Promise<IDBDatabase> {
   return request(opening);
 }
 
-async function opfsRoot(): Promise<FileSystemDirectoryHandle> {
+async function opfsRoot(account = getLocalAccount()): Promise<FileSystemDirectoryHandle> {
   if (!navigator.storage?.getDirectory) throw new Error('OPFS is unavailable.');
-  return (await navigator.storage.getDirectory()).getDirectoryHandle(ROOT_NAME, { create: true });
+  return (await navigator.storage.getDirectory()).getDirectoryHandle(scopedStorageName(ROOT_NAME, account), { create: true });
 }
 
 export class RecordingStore {
@@ -42,6 +43,7 @@ export class RecordingStore {
   private sequences: Record<Orientation, number> = { landscape: 0, portrait: 0 };
   private metadata: Metadata;
   private closed = false;
+  private account = getLocalAccount();
 
   constructor(private mimeType: string) {
     this.metadata = { id: this.id, createdAt: Date.now(), completed: false, mimeType, landscapeBytes: 0, portraitBytes: 0 };
@@ -54,7 +56,7 @@ export class RecordingStore {
 
   async open(): Promise<void> {
     try {
-      this.directory = await (await opfsRoot()).getDirectoryHandle(this.id, { create: true });
+      this.directory = await (await opfsRoot(this.account)).getDirectoryHandle(this.id, { create: true });
       for (const orientation of ['landscape', 'portrait'] as const) {
         const file = await this.directory.getFileHandle(orientation, { create: true });
         this.writers[orientation] = await file.createWritable();
@@ -64,7 +66,7 @@ export class RecordingStore {
       for (const writer of Object.values(this.writers)) await writer?.abort().catch(() => undefined);
       this.writers = {};
       this.directory = undefined;
-      this.database = await openDatabase();
+      this.database = await openDatabase(this.account);
     }
     await this.saveMetadata();
   }
@@ -140,10 +142,10 @@ export async function estimateCapacity(storage: 'opfs' | 'indexeddb', videoBitsP
   };
 }
 
-export async function listRecoverableRecordings(): Promise<RecoveryRecording[]> {
+export async function listRecoverableRecordings(account = getLocalAccount()): Promise<RecoveryRecording[]> {
   const records: RecoveryRecording[] = [];
   try {
-    const root = await opfsRoot();
+    const root = await opfsRoot(account);
     for await (const directory of (root as unknown as { values(): AsyncIterable<FileSystemHandle> }).values()) {
       if (directory.kind !== 'directory') continue;
       try {
@@ -155,7 +157,7 @@ export async function listRecoverableRecordings(): Promise<RecoveryRecording[]> 
     }
   } catch { /* OPFS may be disabled; IndexedDB is still inspected. */ }
   try {
-    const database = await openDatabase();
+    const database = await openDatabase(account);
     records.push(...await request(database.transaction('sessions', 'readonly').objectStore('sessions').getAll()) as Metadata[]);
     database.close();
   } catch { /* No accessible local database. */ }
@@ -163,9 +165,9 @@ export async function listRecoverableRecordings(): Promise<RecoveryRecording[]> 
 }
 
 /** Reopen a completed take without keeping its exported Blob in application memory. */
-export async function readRecordingFiles(id: string): Promise<Record<Orientation, Blob>> {
+export async function readRecordingFiles(id: string, account = getLocalAccount()): Promise<Record<Orientation, Blob>> {
   try {
-    const directory = await (await opfsRoot()).getDirectoryHandle(id);
+    const directory = await (await opfsRoot(account)).getDirectoryHandle(id);
     const metadata = JSON.parse(await (await (await directory.getFileHandle('metadata.json')).getFile()).text()) as Metadata;
     const files = await Promise.all((['landscape', 'portrait'] as const).map(async orientation => {
       const raw = await (await directory.getFileHandle(orientation)).getFile();
@@ -174,7 +176,7 @@ export async function readRecordingFiles(id: string): Promise<Record<Orientation
     return { landscape: files[0], portrait: files[1] };
   } catch { /* The browser may have used IndexedDB instead of OPFS. */ }
 
-  const database = await openDatabase();
+  const database = await openDatabase(account);
   try {
     const metadata = await request(database.transaction('sessions', 'readonly').objectStore('sessions').get(id)) as Metadata | undefined;
     if (!metadata) throw new Error('Este vídeo não está mais disponível neste navegador.');
@@ -188,16 +190,16 @@ export async function readRecordingFiles(id: string): Promise<Record<Orientation
 }
 
 /** Delete one take only; other projects and incomplete sessions are preserved. */
-export async function deleteRecordingFiles(id: string): Promise<void> {
+export async function deleteRecordingFiles(id: string, account = getLocalAccount()): Promise<void> {
   let root: FileSystemDirectoryHandle | undefined;
-  try { root = await opfsRoot(); } catch { /* IndexedDB is used when OPFS is unavailable. */ }
+  try { root = await opfsRoot(account); } catch { /* IndexedDB is used when OPFS is unavailable. */ }
   if (root) {
     try { await root.removeEntry(id, { recursive: true }); }
     catch (error) {
       if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
     }
   }
-  const database = await openDatabase();
+  const database = await openDatabase(account);
   try {
     const transaction = database.transaction(['sessions', 'chunks'], 'readwrite');
     const done = transactionDone(transaction);
@@ -209,19 +211,34 @@ export async function deleteRecordingFiles(id: string): Promise<void> {
 
 /** Delete only this app's staged files. Call only while no recording is active. */
 export async function clearStagedRecordings(): Promise<void> {
+  const account = getLocalAccount();
   let opfsFailure: unknown;
   if (navigator.storage?.getDirectory) {
     try {
-      await (await navigator.storage.getDirectory()).removeEntry(ROOT_NAME, { recursive: true });
+      await (await navigator.storage.getDirectory()).removeEntry(scopedStorageName(ROOT_NAME, account), { recursive: true });
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'NotFoundError')) opfsFailure = error;
     }
   }
   await new Promise<void>((resolve, reject) => {
-    const deleting = indexedDB.deleteDatabase(DB_NAME);
+    const deleting = indexedDB.deleteDatabase(scopedStorageName(DB_NAME, account));
     deleting.onsuccess = () => resolve();
     deleting.onerror = () => reject(deleting.error ?? new Error('Staged recordings could not be cleared.'));
     deleting.onblocked = () => reject(new Error('Another tab is using staged recordings. Close its recording session and try again.'));
   });
   if (opfsFailure) throw opfsFailure;
+}
+
+/** Store an explicit offline copy under the original ID, without touching another account. */
+export async function writeRecordingFiles(id: string, files: Record<Orientation, Blob>, account = getLocalAccount()): Promise<void> {
+  if (!/^[\w-]{1,128}$/.test(id) || !files.landscape.size || !files.portrait.size) throw new Error('Arquivos da gravação inválidos.');
+  const database = await openDatabase(account);
+  try {
+    const transaction = database.transaction(['sessions', 'chunks'], 'readwrite');
+    const committed = transactionDone(transaction);
+    transaction.objectStore('sessions').put({ id, createdAt: Date.now(), completed: true, mimeType: files.landscape.type || 'video/webm', landscapeBytes: files.landscape.size, portraitBytes: files.portrait.size } satisfies Metadata);
+    transaction.objectStore('chunks').delete(IDBKeyRange.bound([id, ''], [id, '\uffff', Number.MAX_SAFE_INTEGER]));
+    for (const orientation of ['landscape', 'portrait'] as const) transaction.objectStore('chunks').put({ id, orientation, sequence: 0, data: files[orientation] } satisfies StoredChunk);
+    await committed;
+  } finally { database.close(); }
 }

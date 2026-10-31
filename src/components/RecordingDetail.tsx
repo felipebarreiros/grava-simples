@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent } from "react";
+import { materializeRecordingFile, refreshCloudMediaUrl, getStoredCloudTranscript, saveStoredCloudTranscript } from "../recordings/cloudStorage";
 import { useAuth } from "@clerk/react";
 import { reportApplicationError, trackCreatorEvent } from '../analytics/client';
 import { recordingFileProperties } from '../analytics/recordingMetrics';
@@ -82,6 +83,7 @@ interface Props {
   projectName: string;
   result: RecordingResult;
   downloads: Record<string, RecordingDownloadState>;
+  storageActions?: ReactNode;
   onBack: () => void;
   onRename: () => void;
   onDownload: (file: RecordingFile) => void;
@@ -119,6 +121,7 @@ export function RecordingDetail({
   projectName,
   result,
   downloads,
+  storageActions,
   onBack,
   onRename,
   onDownload,
@@ -131,6 +134,12 @@ export function RecordingDetail({
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState("1");
   const [mediaError, setMediaError] = useState("");
+  const [remoteUrls, setRemoteUrls] = useState<Partial<Record<Orientation, string>>>({});
+  const mediaRenewing = useRef(false);
+  const mediaRenewedAt = useRef(0);
+  const [storedTranscriptVersion, setStoredTranscriptVersion] = useState<number | null>(null);
+  const [storedTranscriptStatus, setStoredTranscriptStatus] = useState("");
+  const [savingStoredTranscript, setSavingStoredTranscript] = useState(false);
   const [error, setError] = useState("");
   const [dismissedDownloadError, setDismissedDownloadError] = useState("");
   const [transcript, setTranscript] = useState(() => loadTranscript(take.id));
@@ -173,7 +182,7 @@ export function RecordingDetail({
   const requestedOrientation = useRef<Orientation>("landscape");
   const mounted = useRef(true);
   const duration = mediaDuration || take.durationMs / 1000;
-  const file = result[orientation];
+  const file = remoteUrls[orientation] ? { ...result[orientation], url: remoteUrls[orientation]! } : result[orientation];
   const download = downloads[`${take.id}-${orientation}`];
   const visibleDownloadError =
     download?.error !== dismissedDownloadError ? download?.error : "";
@@ -210,6 +219,7 @@ export function RecordingDetail({
     }
     return grouped;
   }, [transcript]);
+
   const currentCueId = transcript?.cues.find(
     (cue) => position >= cue.start && position < cue.end,
   )?.id;
@@ -228,6 +238,65 @@ export function RecordingDetail({
       cloudRequest.current?.abort();
     };
   }, []);
+  useEffect(() => {
+    if (!take.cloud) return;
+    let cancelled = false;
+    void getStoredCloudTranscript(take.cloud.id, () => tokenGetter.current()).then(remote => {
+      if (cancelled || !mounted.current) return;
+      setStoredTranscriptVersion(remote.version);
+      if (remote.transcript && !currentTranscript.current) {
+        const saved = saveTranscript(take.id, remote.transcript);
+        currentTranscript.current = saved; setTranscript(saved);
+        setStoredTranscriptStatus('Transcrição recuperada da nuvem.');
+      } else if (!remote.transcript) {
+        setStoredTranscriptStatus(currentTranscript.current ? 'Transcrição salva apenas neste dispositivo.' : 'Sem transcrição na nuvem.');
+      } else if (remote.transcript && currentTranscript.current) {
+        const shape = (value: Transcript) => JSON.stringify({ ...value, updatedAt: 0 });
+        setStoredTranscriptStatus(shape(remote.transcript) === shape(currentTranscript.current) ? 'Transcrição salva na nuvem.' : 'Sua versão local foi preservada. Envie-a para atualizar a cópia na nuvem.');
+      }
+    }).catch(failure => { if (!cancelled && mounted.current) setStoredTranscriptStatus(failureMessage(failure)); });
+    return () => { cancelled = true; };
+  }, [take.id, take.cloud?.id]);
+  async function persistStoredTranscript(value = currentTranscript.current) {
+    if (!take.cloud) return;
+    if (savingStoredTranscript) throw new Error('Aguarde a transcrição terminar de salvar.');
+    setSavingStoredTranscript(true);
+    try {
+      const current = storedTranscriptVersion === null ? await getStoredCloudTranscript(take.cloud.id, () => tokenGetter.current()) : { version: storedTranscriptVersion };
+      const version = await saveStoredCloudTranscript(take.cloud.id, value, current.version, () => tokenGetter.current());
+      if (mounted.current) { setStoredTranscriptVersion(version); setStoredTranscriptStatus('Transcrição salva na nuvem.'); }
+    } catch (failure) {
+      if (mounted.current) setStoredTranscriptStatus(`${failureMessage(failure)} Sua versão local foi preservada. Reabra a gravação para conferir a versão na nuvem.`);
+      throw failure;
+    } finally { if (mounted.current) setSavingStoredTranscript(false); }
+  }
+  async function renewMedia() {
+    if (!take.cloud || mediaRenewing.current || Date.now() - mediaRenewedAt.current < 30_000) {
+      setMediaError('Não foi possível carregar a prévia. Reabra a gravação e tente novamente.'); return;
+    }
+    mediaRenewing.current = true; mediaRenewedAt.current = Date.now();
+    const requested = orientation;
+    positionRef.current = video.current?.currentTime || positionRef.current;
+    resumeAfterSwitch.current = playing;
+    try {
+      const url = await refreshCloudMediaUrl(take.cloud.id, requested, () => tokenGetter.current());
+      if (mounted.current) { setRemoteUrls(previous => ({ ...previous, [requested]: url })); setMediaError(''); }
+    } catch (failure) { if (mounted.current) setMediaError(failureMessage(failure)); }
+    finally { mediaRenewing.current = false; }
+  }
+  async function downloadOriginal(event: MouseEvent<HTMLAnchorElement>, chosen: Orientation) {
+    const original = result[chosen];
+    trackCreatorEvent('download_requested', { ...recordingFileProperties(original), download_kind: 'original' });
+    if (original.blob.size || !take.cloud) return;
+    event.preventDefault();
+    try {
+      const materialized = await materializeRecordingFile(original, undefined, { id: take.cloud.id, getToken: () => tokenGetter.current() });
+      if (!mounted.current) return;
+      const url = URL.createObjectURL(materialized.blob);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = original.fileName; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (failure) { if (mounted.current) setError(failureMessage(failure)); }
+  }
   useEffect(() => {
     const controller = new AbortController();
     cloudPoll.current = controller;
@@ -304,7 +373,7 @@ export function RecordingDetail({
       const next = await startCloudTranscription({
         recordingId: take.id,
         userId,
-        file: transcriptionFile,
+        file: await materializeRecordingFile(transcriptionFile, controller.signal, take.cloud ? { id: take.cloud.id, getToken: () => tokenGetter.current() } : undefined),
         getToken: () => tokenGetter.current(),
         signal: controller.signal,
         onProgress: (percentage) => {
@@ -378,6 +447,7 @@ export function RecordingDetail({
           undefined,
           userId ?? undefined,
         );
+      if (take.cloud) await persistStoredTranscript(null);
       deleteTranscript(take.id);
       currentTranscript.current = null;
       if (userId) clearCloudReplacement(userId, take.id);
@@ -451,6 +521,8 @@ export function RecordingDetail({
   function persistTranscript(next: Transcript) {
     const saved = saveTranscript(take.id, next);
     setTranscript(saved);
+    currentTranscript.current = saved;
+    if (take.cloud) setStoredTranscriptStatus("Alterações salvas neste dispositivo. Envie a transcrição para a nuvem.");
     setEditing(null);
     setQuery("");
     setError("");
@@ -573,7 +645,7 @@ export function RecordingDetail({
             role="status"
           >
             <Check size={13} />
-            {editing ? "Correção não salva" : "Salvo neste navegador"}
+            {editing ? "Correção não salva" : take.cloud ? "Backup na nuvem confirmado" : "Salvo neste navegador"}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -593,7 +665,7 @@ export function RecordingDetail({
                 <a
                   href={result.landscape.url}
                   download={result.landscape.fileName}
-                  onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(result.landscape), download_kind: 'original' })}
+                  onClick={event => void downloadOriginal(event, 'landscape')}
                 >
                   Original horizontal
                 </a>
@@ -602,7 +674,7 @@ export function RecordingDetail({
                 <a
                   href={result.portrait.url}
                   download={result.portrait.fileName}
-                  onClick={() => trackCreatorEvent('download_requested', { ...recordingFileProperties(result.portrait), download_kind: 'original' })}
+                  onClick={event => void downloadOriginal(event, 'portrait')}
                 >
                   Original vertical
                 </a>
@@ -611,6 +683,8 @@ export function RecordingDetail({
           </DropdownMenu>
         </div>
       </header>
+      {storageActions}
+      {take.cloud && <div className="cloud-transcript-sync"><span role="status">{storedTranscriptStatus || 'Carregando transcrição da nuvem…'}</span>{transcript && <Button size="sm" variant="outline" disabled={savingStoredTranscript || storedTranscriptVersion === null || cloudBusy} onClick={() => void persistStoredTranscript().catch(() => undefined)}>{savingStoredTranscript ? 'Salvando…' : 'Salvar transcrição na nuvem'}</Button>}</div>}
       {(error || visibleDownloadError) && (
         <div className="recording-detail-error" role="alert">
           <span>{error || visibleDownloadError}</span>
@@ -1094,11 +1168,8 @@ export function RecordingDetail({
                 onPlay={() => setPlaying(true)}
                 onPause={() => setPlaying(false)}
                 onEnded={() => setPlaying(false)}
-                onError={() =>
-                  setMediaError(
-                    "Não foi possível carregar a prévia. O arquivo original continua disponível para download.",
-                  )
-                }
+                crossOrigin={take.cloud && !file.url.startsWith('blob:') ? 'anonymous' : undefined}
+                onError={() => { if (take.cloud) void renewMedia(); else setMediaError('Não foi possível carregar a prévia. O arquivo original continua disponível para download.'); }}
                 onClick={() => void togglePlayback()}
                 onKeyDown={(event) => {
                   if (event.key === " ") {
@@ -1318,7 +1389,7 @@ export function RecordingDetail({
         <AlertDialog
           onClose={() => setRemoveTranscript(false)}
           title="Remover a transcrição?"
-          description="O texto e suas correções serão removidos deste navegador. Você pode importar a legenda novamente."
+          description={take.cloud ? "O texto e suas correções serão removidos deste dispositivo e da cópia na nuvem. Você pode importar a legenda novamente." : "O texto e suas correções serão removidos deste navegador. Você pode importar a legenda novamente."}
           actionLabel="Remover transcrição"
           pending={removingTranscript}
           onConfirm={() => void clearTranscript()}

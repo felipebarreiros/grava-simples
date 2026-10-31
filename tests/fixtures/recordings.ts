@@ -57,6 +57,8 @@ export async function seedRecordingReview(page: Page) {
   await page.goto("/recording-detail-fixture");
   return page.evaluate(async () => {
     localStorage.clear();
+    const keys = await import("/src/projects/keys.ts");
+    keys.setLocalAccount("user_fixture");
     const store = await import("/src/projects/store.ts");
     const { RecordingStore } = await import("/src/media/storage.ts");
     const project = store.loadProjects()[0];

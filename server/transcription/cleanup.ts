@@ -8,7 +8,9 @@ export async function handleCleanup(
   request: Request,
   deps: TranscriptionDependencies,
   secret?: string,
+  observed = true,
 ): Promise<Response> {
+  if (!observed) return handleObservedCleanup(request, deps, secret);
   return observeServerRequest("transcription-cleanup", request, () =>
     handleObservedCleanup(request, deps, secret),
   );

@@ -1,8 +1,8 @@
-import { deleteRecordingFiles, listRecoverableRecordings, readRecordingFiles } from '../media/storage';
+import { deleteRecordingFiles, listRecoverableRecordings, readRecordingFiles, writeRecordingFiles } from '../media/storage';
 import { defaultSceneAppearance, normalizeSceneAppearance } from '../media/SceneCompositor';
 import type { RecordingResult, Resolution, SceneAppearance, SourceKind, StudioControls, StudioLayout } from '../media/types';
 import { deleteProjectSceneAssets } from './assets';
-import { WORKSPACE_STORAGE_KEY } from './keys';
+import { WORKSPACE_STORAGE_KEY, LEGACY_WORKSPACE_STORAGE_KEY, assertLocalAccount, getLocalAccount, scopedLocalKey } from './keys';
 import { createProjectCover } from './thumbnails';
 import { normalizeProjectSources, type ProjectSource } from './sources';
 import { createRecordingThumbnail, type RecordingThumbnailData } from './recordingThumbnails';
@@ -48,6 +48,8 @@ export interface ProjectTake {
   startedAt: number;
   stoppedAt: number;
   durationMs: number;
+  /** Server-confirmed backup, never inferred from an upload starting. */
+  cloud?: { id: string; verifiedAt: number };
   /** Actual video frame, captured at 5% where the browser can seek. */
   thumbnail?: string;
   thumbnailAtSeconds?: number;
@@ -66,7 +68,6 @@ interface Workspace {
   sourceRevision?: number;
 }
 
-const KEY = WORKSPACE_STORAGE_KEY;
 const SCENE_REVISION = 3;
 const SOURCE_REVISION = 1;
 const LAYOUTS = new Set(['camera', 'camera-zoom', 'screen', 'screen-3d', 'countdown']);
@@ -117,7 +118,7 @@ function addCountdown(project: Project): void {
 }
 
 function read(): Workspace {
-  const raw = localStorage.getItem(KEY);
+  const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
   if (raw) {
     const stored = JSON.parse(raw) as Workspace;
     if (stored.version !== 1 || !Array.isArray(stored.projects) || !Array.isArray(stored.takes) ||
@@ -151,9 +152,9 @@ function read(): Workspace {
     }
     return stored;
   }
-  const project = newProject(localStorage.getItem('grava-simples-project') || 'Meu primeiro projeto');
+  const project = newProject((!getLocalAccount() && localStorage.getItem('grava-simples-project')) || 'Meu primeiro projeto');
   try {
-    const legacyScenes: unknown = JSON.parse(localStorage.getItem('grava-simples-scenes') || 'null');
+    const legacyScenes: unknown = JSON.parse((!getLocalAccount() && localStorage.getItem('grava-simples-scenes')) || 'null');
     if (validScenes(legacyScenes)) {
       project.scenes = legacyScenes.map(scene => normalizedScene(scene));
       if (!project.scenes.some(scene => scene.layout === 'screen-3d')) project.scenes.push(clone(DEFAULT_PROJECT_SCENES[3]));
@@ -167,7 +168,7 @@ function read(): Workspace {
 }
 
 function write(workspace: Workspace): void {
-  try { localStorage.setItem(KEY, JSON.stringify(workspace)); }
+  try { localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace)); }
   catch { throw new Error('Não foi possível salvar o projeto neste navegador. Verifique o espaço disponível e as permissões de armazenamento.'); }
 }
 
@@ -235,8 +236,11 @@ export function deleteProject(id: string): void {
 }
 
 export async function deleteProjectAndRecordings(id: string): Promise<void> {
-  for (const take of listProjectTakes(id)) await deleteProjectTake(take.id);
+  const account = getLocalAccount();
+  for (const take of listProjectTakes(id)) { assertLocalAccount(account); await deleteProjectTake(take.id); }
+  assertLocalAccount(account);
   await deleteProjectSceneAssets(id);
+  assertLocalAccount(account);
   deleteProject(id);
 }
 
@@ -245,6 +249,7 @@ export function listProjectTakes(projectId?: string): ProjectTake[] {
 }
 
 export async function saveProjectTake(projectId: string, result: RecordingResult): Promise<ProjectTake> {
+  const account = getLocalAccount();
   const workspace = read();
   const project = workspace.projects.find(item => item.id === projectId);
   if (!project) throw new Error('O projeto desta gravação não está mais disponível.');
@@ -264,6 +269,7 @@ export async function saveProjectTake(projectId: string, result: RecordingResult
   // thumbnail quota must never turn a successfully saved take into a failure.
   try {
     const thumbnail = await createRecordingThumbnail(result.landscape.blob, take.durationMs);
+    assertLocalAccount(account);
     return saveProjectTakeThumbnail(take.id, thumbnail);
   } catch { return clone(take); }
 }
@@ -285,16 +291,20 @@ export function saveProjectTakeThumbnail(id: string, thumbnail: RecordingThumbna
 /** Backfill old takes on demand; one decoder at a time bounds library work. */
 let thumbnailQueue: Promise<unknown> = Promise.resolve();
 export function ensureProjectTakeThumbnail(take: ProjectTake, signal?: AbortSignal): Promise<RecordingThumbnailData> {
+  const account = getLocalAccount();
   const job = thumbnailQueue.catch(() => undefined).then(async () => {
+    assertLocalAccount(account);
     if (signal?.aborted) throw new DOMException('A prévia foi cancelada.', 'AbortError');
     const current = read().takes.find(item => item.id === take.id);
     if (!current) throw new Error('Gravação não encontrada.');
     if (current.thumbnail) return {
       thumbnail: current.thumbnail, thumbnailAtSeconds: current.thumbnailAtSeconds ?? 0,
     };
-    const files = await readRecordingFiles(take.id);
+    const files = await readRecordingFiles(take.id, account);
+    assertLocalAccount(account);
     if (signal?.aborted) throw new DOMException('A prévia foi cancelada.', 'AbortError');
     const thumbnail = await createRecordingThumbnail(files.landscape, current.durationMs, signal);
+    assertLocalAccount(account);
     saveProjectTakeThumbnail(take.id, thumbnail);
     return thumbnail;
   });
@@ -314,10 +324,12 @@ export function renameProjectTake(id: string, name: string): ProjectTake {
 }
 
 export async function deleteProjectTake(id: string): Promise<void> {
+  const account = getLocalAccount();
   const workspace = read();
   const take = workspace.takes.find(item => item.id === id);
   if (!take) return;
-  await deleteRecordingFiles(id);
+  await deleteRecordingFiles(id, account);
+  assertLocalAccount(account);
   // Re-read after the async file deletion, preserving edits made in the meantime.
   const latest = read();
   latest.takes = latest.takes.filter(item => item.id !== id);
@@ -329,7 +341,9 @@ export async function deleteProjectTake(id: string): Promise<void> {
 }
 
 export async function restoreProjectTake(take: ProjectTake): Promise<RecordingResult> {
-  const files = await readRecordingFiles(take.id);
+  const account = getLocalAccount();
+  const files = await readRecordingFiles(take.id, account);
+  assertLocalAccount(account);
   return {
     id: take.id, startedAt: take.startedAt, stoppedAt: take.stoppedAt, warnings: [...take.warnings],
     landscape: { ...take.landscape, orientation: 'landscape', blob: files.landscape, url: URL.createObjectURL(files.landscape), size: files.landscape.size, durationMs: take.durationMs },
@@ -339,8 +353,10 @@ export async function restoreProjectTake(take: ProjectTake): Promise<RecordingRe
 
 /** Import only complete pre-project takes once, into the original project. No files are moved or deleted. */
 export async function importLegacyRecordings(): Promise<number> {
+  const account = getLocalAccount();
   if (read().legacyRecordingsImported) return 0;
   const records = await listRecoverableRecordings();
+  assertLocalAccount(account);
   const workspace = read();
   if (workspace.legacyRecordingsImported) return 0;
   const project = workspace.projects.slice().sort((a, b) => a.createdAt - b.createdAt)[0];
@@ -368,4 +384,85 @@ export function clearProjectTakeIndex(): void {
   workspace.takes = [];
   write(workspace);
   for (const id of ids) { deleteTranscript(id); deleteReview(id); }
+}
+
+/** Merge only finalized server metadata. Local scene settings and originals remain intact. */
+export function mergeCloudRecordings(records: Array<ProjectTake & { localId: string; projectName: string; status: string }>): void {
+  const workspace = read();
+  for (const record of records) {
+    if (record.status !== 'ready' || typeof record.localId !== 'string' || !/^[\w-]{1,128}$/.test(record.localId)) continue;
+    let project = workspace.projects.find(item => item.id === record.projectId);
+    if (!project) {
+      project = { ...newProject(record.projectName), id: record.projectId };
+      workspace.projects.push(project);
+    }
+    const previous = workspace.takes.find(item => item.id === record.localId);
+    const take: ProjectTake = { id: record.localId, projectId: project.id, name: record.name, createdAt: record.createdAt, startedAt: record.startedAt, stoppedAt: record.stoppedAt, durationMs: record.durationMs, landscape: record.landscape, portrait: record.portrait, warnings: record.warnings ?? [], thumbnail: record.thumbnail, thumbnailAtSeconds: record.thumbnailAtSeconds, cloud: { id: record.id, verifiedAt: Date.now() } };
+    if (previous) Object.assign(previous, take, { name: previous.name });
+    else workspace.takes.push(take);
+  }
+  write(workspace);
+}
+
+const legacyClaimsKey = 'grava-legacy-recording-claims-v1';
+function legacyClaims(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(legacyClaimsKey) || '{}'); } catch { return {}; }
+}
+export function hasUnclaimedLegacyRecordings(): boolean {
+  if (!getLocalAccount()) return false;
+  try {
+    const old = JSON.parse(localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY) || 'null');
+    const claims = legacyClaims();
+    const account = getLocalAccount();
+    const imported = new Set(read().takes.map(take => take.id));
+    return Array.isArray(old?.takes) && old.takes.some((take: ProjectTake) => !claims[take.id] || (claims[take.id] === account && !imported.has(take.id)));
+  } catch { return false; }
+}
+/** Explicit device import. Never adopts another account's scoped catalogue or files. */
+async function claimLegacyRecordingsLocked(): Promise<number> {
+  const account = getLocalAccount();
+  if (!account) throw new Error('Entre para importar as gravações deste navegador.');
+  const legacy = JSON.parse(localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY) || 'null');
+  if (!Array.isArray(legacy?.takes)) return 0;
+  let count = 0;
+  let target: Project | undefined;
+  for (const take of legacy.takes as ProjectTake[]) {
+    assertLocalAccount(account);
+    const owner = legacyClaims()[take.id];
+    if (!/^[\w-]{1,128}$/.test(take.id) || (owner && owner !== account) || read().takes.some(item => item.id === take.id)) continue;
+    const files = await readRecordingFiles(take.id, null);
+    assertLocalAccount(account);
+    // Claim before copying, so another tab/account cannot adopt this legacy original.
+    const claims = legacyClaims();
+    if (claims[take.id] && claims[take.id] !== account) continue;
+    claims[take.id] = account;
+    localStorage.setItem(legacyClaimsKey, JSON.stringify(claims));
+    try {
+      await writeRecordingFiles(take.id, files, account);
+      assertLocalAccount(account);
+      const verified = await readRecordingFiles(take.id, account);
+      assertLocalAccount(account);
+      if (verified.landscape.size !== files.landscape.size || verified.portrait.size !== files.portrait.size) throw new Error('A cópia local ainda não foi confirmada.');
+      target ??= createProject('Gravações deste navegador');
+      const workspace = read();
+      if (!workspace.takes.some(item => item.id === take.id)) workspace.takes.push({ ...take, projectId: target.id, cloud: undefined });
+      write(workspace);
+      for (const prefix of ['grava-simples-transcript-v1:', 'grava-recording-review-v1:']) {
+        const raw = localStorage.getItem(prefix + take.id);
+        if (raw) localStorage.setItem(scopedLocalKey(prefix + take.id, account), raw);
+      }
+      count++;
+      // The account copy is verified and catalogued before redundant legacy bytes leave disk.
+      await deleteRecordingFiles(take.id, null);
+    } catch (error) {
+      // Explicit ownership remains reserved for this account; a failed import can be retried.
+      throw error;
+    }
+  }
+  return count;
+}
+
+export async function claimLegacyRecordings(): Promise<number> {
+  if (!navigator.locks) throw new Error('Este navegador não permite importar o acervo com segurança. Baixe os originais antes de trocar de conta.');
+  return navigator.locks.request('grava-legacy-recording-import', claimLegacyRecordingsLocked);
 }
