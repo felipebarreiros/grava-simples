@@ -193,8 +193,8 @@ try {
     } else if (airplayForPlatform && airplayBinary) {
       const name = platform === 'windows' ? 'uxplay.exe' : 'uxplay';
       copy(airplayBinary, join(packageDirectory, 'airplay', name));
-      if (airplayLicense && existsSync(airplayLicense)) copy(airplayLicense, join(packageDirectory, 'airplay', 'LICENSE.txt'));
     }
+    if (airplayForPlatform && airplayLicense && existsSync(airplayLicense)) copy(airplayLicense, join(packageDirectory, 'airplay', 'LICENSE.txt'));
     for (const file of walk(source)) copy(file, join(packageDirectory, 'source', relative(source, file)));
     copy(join(root, 'COPYING'), join(packageDirectory, 'COPYING.txt'));
     writeFileSync(join(packageDirectory, 'THIRD-PARTY-NOTICES.txt'), notices);
