@@ -129,10 +129,10 @@ export class RecordingStore {
   }
 }
 
-export async function estimateCapacity(storage: 'opfs' | 'indexeddb', videoBitsPerSecond: number): Promise<CapacityInfo> {
+export async function estimateCapacity(storage: 'opfs' | 'indexeddb', videoBitsPerSecond: number, audioBitsPerSecond = 192_000): Promise<CapacityInfo> {
   const estimate: StorageEstimate = await navigator.storage?.estimate?.().catch((): StorageEstimate => ({})) ?? {};
   const available = estimate.quota === undefined ? undefined : Math.max(0, estimate.quota - (estimate.usage ?? 0));
-  const estimatedBytesPerMinute = (videoBitsPerSecond * 2 + 256_000) * 60 / 8;
+  const estimatedBytesPerMinute = (videoBitsPerSecond * 2 + audioBitsPerSecond * 2) * 60 / 8;
   return {
     storage, usage: estimate.usage, quota: estimate.quota, available,
     estimatedBytesPerMinute,

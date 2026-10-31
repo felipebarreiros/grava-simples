@@ -520,6 +520,33 @@ test("source plus opens an explicit chooser and imports a real image into both c
   });
   expect(importedLayer.sourceId).toBeTruthy();
   expect(importedLayer.assetId).toBeTruthy();
+  const opacityControl = page.getByTestId("layer-opacity");
+  await expect(opacityControl).toBeVisible();
+  const fullOpacityOrange = imageOutputs[0].orange;
+  await opacityControl.press("Home");
+  for (let index = 0; index < 50; index++) await opacityControl.press("ArrowRight");
+  await expect.poll(async () => {
+    const current = await snapshot(page);
+    return (current.project as any)?.scenes
+      .find((scene: any) => scene.id === current.project?.selectedSceneId)
+      ?.appearance?.layers.find((layer: any) => layer.id === importedLayer.id)?.opacity;
+  }).toBeGreaterThan(.45);
+  const editedSnapshot = await snapshot(page);
+  const editedOpacity = (editedSnapshot.project as any)?.scenes
+    .find((scene: any) => scene.id === editedSnapshot.project?.selectedSceneId)
+    ?.appearance?.layers.find((layer: any) => layer.id === importedLayer.id)?.opacity;
+  await expect.poll(async () => (await palette(page)).every((value) => value.orange < fullOpacityOrange * .8)).toBe(true);
+  const storedOpacity = await page.evaluate(async () => {
+    const { WORKSPACE_STORAGE_KEY: key } = await import("/src/projects/keys.ts");
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    const workspace = JSON.parse(raw);
+    return workspace.projects[0].scenes.find((scene: any) => scene.id === workspace.projects[0].selectedSceneId)
+      ?.appearance?.layers.find((layer: any) => layer.assetId)?.opacity;
+  });
+  expect(Math.abs(storedOpacity - editedOpacity)).toBeLessThan(.02);
+  await opacityControl.press("End");
+  await expect.poll(async () => (await palette(page)).every((value) => value.orange > 0.05)).toBe(true);
   await page.getByTestId(`layer-eye-${importedLayer.id}`).click();
   await expect
     .poll(async () =>

@@ -38,6 +38,10 @@ test('shared scene compositor preserves geometry, layers, countdown and 3D frame
       const reordered = structuredClone(base.appearance); reordered.layers = [reordered.layers[0], reordered.layers[2], reordered.layers[1]];
       compositor.render(context, 640, 360, { ...base, appearance: reordered });
       const reorderedCamera = pixel(570, 300);
+      const media = makeCanvas(320, 180, '#ff0000');
+      const mediaAppearance = { ...defaultSceneAppearance('camera'), layers: [{ id: 'background', kind: 'background', name: 'Fundo', visible: true, opacity: .25 }] };
+      compositor.render(context, 640, 360, { ...base, appearance: mediaAppearance, camera: undefined, screen: undefined, layerSources: { background: { element: media, width: 320, height: 180 } } });
+      const mediaOpacity = pixel(320, 180);
       const circle = { ...base.appearance, cameraShape: 'circle', cameraBorderColor: '#ff4000', cameraBorderWidth: 12, cameraShadow: true };
       compositor.render(context, 640, 360, { ...base, appearance: circle });
       const circlePixels = { corner: pixel(485, 260), center: pixel(550, 300) };
@@ -100,12 +104,13 @@ test('shared scene compositor preserves geometry, layers, countdown and 3D frame
         maximumSpread: Math.max(...linePoints.map(point => point.spread)),
         minimumContrast: Math.min(...linePoints.map(point => point.maximumDarkness)),
       };
-      const normalized = normalizeSceneAppearance('countdown', { countdownSeconds: NaN, cameraBorderWidth: 999, cameraBorderColor: 'url(evil)', layers: [{ id: 'ok', kind: 'timer', visible: false, name: 'Timer' }, { id: 'bad', kind: 'unknown', visible: true }] });
-      return { regularCamera, hiddenCamera, reorderedCamera, circlePixels, perspective: recorded, perspectiveDrawCalls, presentationLayouts, quality, contained: containedRect(1000, 100, 0, 0, 100, 100), normalized, defaultCountdown: defaultSceneAppearance('countdown').layers.map(layer => layer.kind) };
+      const normalized = normalizeSceneAppearance('countdown', { countdownSeconds: NaN, cameraBorderWidth: 999, cameraBorderColor: 'url(evil)', layers: [{ id: 'ok', kind: 'timer', visible: false, name: 'Timer', opacity: 4 }, { id: 'bad', kind: 'unknown', visible: true }] });
+      return { regularCamera, hiddenCamera, reorderedCamera, mediaOpacity, circlePixels, perspective: recorded, perspectiveDrawCalls, presentationLayouts, quality, contained: containedRect(1000, 100, 0, 0, 100, 100), normalized, defaultCountdown: defaultSceneAppearance('countdown').layers.map(layer => layer.kind) };
     });
     assert.deepEqual(composition.regularCamera, [245, 154, 112]);
     assert.deepEqual(composition.hiddenCamera, [18, 32, 62]);
     assert.deepEqual(composition.reorderedCamera, [18, 32, 62]);
+    assert.ok(composition.mediaOpacity[0] > 60 && composition.mediaOpacity[0] < 75, `Uploaded media opacity was not applied: ${composition.mediaOpacity}`);
     assert.notDeepEqual(composition.circlePixels.corner, [245, 154, 112]);
     assert.deepEqual(composition.circlePixels.center, [245, 154, 112]);
     assert.ok(composition.perspective.length > 1 && composition.perspective.length <= 64, 'Landscape taper uses bounded image slices');
@@ -136,6 +141,7 @@ test('shared scene compositor preserves geometry, layers, countdown and 3D frame
     assert.equal(composition.normalized.cameraBorderWidth, 16);
     assert.equal(composition.normalized.cameraBorderColor, '#ffffff');
     assert.equal(composition.normalized.layers.length, 1);
+    assert.equal(composition.normalized.layers[0].opacity, 1);
     assert.deepEqual(composition.defaultCountdown, ['background', 'title', 'timer']);
     const performance = await page.evaluate(async () => {
       const { SceneCompositor, defaultSceneAppearance } = await import('/src/media/SceneCompositor.ts');

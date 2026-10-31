@@ -29,6 +29,7 @@ export const ScenePreview = memo(function ScenePreview({
   const zoom = scene.layout === "camera-zoom"
     ? Math.max(1, Math.min(2.5, scene.zoom ?? 1.4)) : 1;
   const layers = appearance.layers.filter((layer) => layer.visible);
+  const opacity = (layer: { opacity?: number }) => Math.max(0, Math.min(1, layer.opacity ?? 1));
 
   return (
     <div
@@ -71,7 +72,7 @@ export const ScenePreview = memo(function ScenePreview({
                     <>
                       <CountdownArtwork id={id} color={appearance.backgroundColor} />
                       <image href={countdownStudio} width="240" height="135"
-                        preserveAspectRatio="xMidYMid slice" opacity={defaultBackground ? 1 : .35} />
+                        preserveAspectRatio="xMidYMid slice" opacity={(defaultBackground ? 1 : .35) * opacity(layer)} />
                     </>
                   ) : (
                     <rect width="240" height="135" fill={appearance.backgroundColor} />
@@ -83,6 +84,7 @@ export const ScenePreview = memo(function ScenePreview({
                       <circle cx="65" cy="42" r="8" />
                     </g>
                   )}
+                  {appearance.backgroundAssetId && <rect width="240" height="135" fill="#000" opacity={1 - opacity(layer)} />}
                 </g>
               </g>
             );
@@ -163,7 +165,7 @@ export const ScenePreview = memo(function ScenePreview({
                   </defs>
                   <polygon points={quad} transform="translate(.5 1.5)" fill="#000000" opacity=".4" />
                   <polygon points={quad} transform="translate(.35 .6)" fill="#49403b" />
-                  <g clipPath={`url(#${id})`}>
+                  <g clipPath={`url(#${id})`} opacity={opacity(layer)}>
                     {getPresentationSlices(rect, 2).map((slice, sliceIndex) => (
                       <svg key={sliceIndex} x={slice.x} y={slice.y}
                         width={slice.width} height={slice.height}
@@ -187,7 +189,7 @@ export const ScenePreview = memo(function ScenePreview({
                 </defs>
                 <rect x="-.5" y="1.5" width={w + 1} height={h + 1}
                   rx="2" fill="#000000" opacity=".3" />
-                <g clipPath={`url(#${id})`}>
+                <g clipPath={`url(#${id})`} opacity={opacity(layer)}>
                   <g transform={`scale(${w / 240} ${h / 135})`}>
                     <ScreenArtwork id={id} />
                   </g>

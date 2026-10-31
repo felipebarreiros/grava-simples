@@ -20,6 +20,8 @@ export interface SceneLayer {
   frames?: Partial<Record<Orientation, LayerFrame>>;
   sourceId?: string;
   assetId?: string;
+  /** Opacity of uploaded visual media over the layers beneath it. */
+  opacity?: number;
   fit?: 'contain' | 'cover';
   cameraShape?: 'rectangle' | 'rounded' | 'circle';
   cameraBorderColor?: string;
@@ -165,6 +167,10 @@ export interface StudioMetrics {
   microphone?: StudioMicrophoneStatus;
   sources?: Record<'camera' | 'screen', StudioSourceStatus>;
   engineBackend: string;
+  /** Target/effective video encoder rate in bits per second when recording. */
+  videoBitsPerSecond?: number;
+  /** Target/effective audio encoder rate in bits per second when recording. */
+  audioBitsPerSecond?: number;
   storage?: CapacityInfo;
   mimeType: string;
   warning?: string;

@@ -1,6 +1,8 @@
 import { RecordingStore, estimateCapacity } from './storage';
 import { LocalMediaSource } from './LocalMediaSource';
 import { defaultSceneAppearance, normalizeSceneAppearance, getLayerFrame, SceneCompositor, type SceneVisualSource } from './SceneCompositor';
+import { RECORDING_AUDIO_BITS_PER_SECOND, recordingVideoBitrate } from './recordingProfile.ts';
+export { RECORDING_AUDIO_BITS_PER_SECOND, recordingVideoBitrate } from './recordingProfile.ts';
 import type { LayoutEngine, Orientation, RecordingResult, SessionState, StudioConfig, StudioControls, StudioEvent, StudioLayout, StudioMetrics, StudioOptions, StudioSourceStatus, SceneAppearance, ScenePreviewOptions, CountdownStatus, LayerFrame, SceneLayer } from './types';
 
 const ORIENTATIONS = ['landscape', 'portrait'] as const;
@@ -103,7 +105,7 @@ export class StudioSession {
   private metrics: StudioMetrics = {
     elapsedMs: 0, frames: { landscape: 0, portrait: 0 }, measuredFps: 0,
     bytes: { landscape: 0, portrait: 0 }, chunks: { landscape: 0, portrait: 0 },
-    pendingWrites: 0, hidden: false, audio: false, audioLevel: 0, audioLevelDb: -100, rawMicLevel: 0, rawMicLevelDb: -100, engineBackend: 'obs-wasm-subset', mimeType: '',
+    pendingWrites: 0, hidden: false, audio: false, audioLevel: 0, audioLevelDb: -100, rawMicLevel: 0, rawMicLevelDb: -100, engineBackend: 'obs-wasm-subset', mimeType: '', videoBitsPerSecond: undefined, audioBitsPerSecond: undefined,
   };
   private capturedStreams: MediaStream[] = [];
   private videos: HTMLVideoElement[] = [];
@@ -225,7 +227,7 @@ export class StudioSession {
       elapsedMs: 0, frames: { landscape: 0, portrait: 0 }, measuredFps: 0,
       bytes: { landscape: 0, portrait: 0 }, chunks: { landscape: 0, portrait: 0 },
       pendingWrites: 0, hidden: document.hidden, audio: false, audioLevel: 0, audioLevelDb: -100, rawMicLevel: 0, rawMicLevelDb: -100,
-      engineBackend: this.engine.backend ?? 'obs-wasm-subset', mimeType: '',
+      engineBackend: this.engine.backend ?? 'obs-wasm-subset', mimeType: '', videoBitsPerSecond: undefined, audioBitsPerSecond: undefined,
     };
     try {
       for (const id of [this.cameraSourceId, this.screenSourceId]) {
@@ -778,7 +780,9 @@ export class StudioSession {
       this.store = new RecordingStore(this.metrics.mimeType);
       await this.store.open();
       const bitrate = this.videoBitrate();
-      this.metrics.storage = await estimateCapacity(this.store.kind, bitrate);
+      this.metrics.videoBitsPerSecond = bitrate;
+      this.metrics.audioBitsPerSecond = RECORDING_AUDIO_BITS_PER_SECOND;
+      this.metrics.storage = await estimateCapacity(this.store.kind, bitrate, RECORDING_AUDIO_BITS_PER_SECOND);
       // The idle preview may use smaller canvases. Paint a complete frame at
       // the selected recording size before either captureStream is created.
       this.render(performance.now(), true);
@@ -792,11 +796,13 @@ export class StudioSession {
         const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
         if (!track) throw new Error('The video output could not be captured.');
         for (const audio of this.audioDestination.stream.getAudioTracks()) stream.addTrack(audio.clone());
-        const recorder = new MediaRecorder(stream, { mimeType: this.metrics.mimeType, videoBitsPerSecond: bitrate, audioBitsPerSecond: 128_000 });
+        const recorder = new MediaRecorder(stream, { mimeType: this.metrics.mimeType, videoBitsPerSecond: bitrate, audioBitsPerSecond: RECORDING_AUDIO_BITS_PER_SECOND });
         let resolveStopped!: () => void;
         const stopped = new Promise<void>(resolve => { resolveStopped = resolve; });
         recorder.onstart = () => {
           this.metrics.mimeType = recorder.mimeType || this.metrics.mimeType;
+          if (Number.isFinite(recorder.videoBitsPerSecond) && recorder.videoBitsPerSecond > 0) this.metrics.videoBitsPerSecond = recorder.videoBitsPerSecond;
+          if (Number.isFinite(recorder.audioBitsPerSecond) && recorder.audioBitsPerSecond > 0) this.metrics.audioBitsPerSecond = recorder.audioBitsPerSecond;
           this.store!.setMimeType(this.metrics.mimeType);
         };
         recorder.ondataavailable = event => {
@@ -1217,8 +1223,7 @@ export class StudioSession {
   }
 
   private videoBitrate(): number {
-    const base = this.config!.resolution === '4k' ? 32_000_000 : this.config!.resolution === '1080' ? 10_000_000 : this.config!.resolution === '720' ? 5_000_000 : 1_400_000;
-    return base * (this.config!.fps === 60 ? 1.5 : 1);
+    return recordingVideoBitrate(this.config!);
   }
 
   private releaseOutputTracks(): void {

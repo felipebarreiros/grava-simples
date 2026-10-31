@@ -426,7 +426,7 @@ test('scene microphone device choices restore exact input constraints and incomp
   await page.getByTestId('scene-camera-zoom').click();
   expect((await snapshot(page)).project.selectedSceneId).toBe('camera');
   expect((await snapshot(page)).config.microphoneDeviceId).toBe('fixture-mic-a');
-  await expect(page.getByRole('alert').filter({ hasText: 'Para trocar os dispositivos desta cena' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Para trocar os dispositivos desta cena' })).toContainText('só podem ser conectados antes de iniciar uma nova tomada');
   expect(await page.evaluate(() => (window as any).__fixtureMicRequests)).toEqual(requests);
   await page.waitForTimeout(900);
   await page.getByTestId('stop-recording').click();

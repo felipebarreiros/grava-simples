@@ -80,9 +80,13 @@ async function convert(file: RecordingFile, onProgress?: (progress: CompatibleEx
     checkExportSignal(signal);
     onProgress?.({ phase: 'converting', progress: 0 });
     checkExportSignal(signal);
+    const preserveAac = /(?:^|[=,;])\s*mp4a(?:[.;,]|$)/i.test(file.mimeType);
+    const audioArgs = preserveAac
+      ? ['-c:a', 'copy']
+      : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-ar', '48000'];
     const exitCode = await ffmpeg.exec([
       '-i', 'input.mp4', '-map', '0:v:0', '-map', '0:a:0?',
-      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000',
+      '-c:v', 'copy', ...audioArgs,
       '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', '-f', 'mp4', 'output.mp4',
     ], 300_000);
     checkExportSignal(signal);

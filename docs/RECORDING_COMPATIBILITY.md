@@ -4,10 +4,12 @@ The original recorder preferred H.264 video with Opus audio in an MP4 container.
 
 The recorder now prefers explicit H.264/AAC MediaRecorder types, retaining the existing H.264/Opus fallback where a browser cannot encode AAC. Chrome 156 on this Linux VM supports H.264/Opus recording but reports AAC unsupported in both MediaRecorder and WebCodecs AudioEncoder. This is a runtime capability decision, not a platform-name assumption.
 
+Capture targets are 2.5 Mbps at 360p, 8 Mbps at 720p, 16 Mbps at 1080p and 45 Mbps at 4K, with a 1.5× adjustment at 60 fps. Audio targets 192 kbps. Browsers can clamp or vary the effective rate; the Preferences technical panel reports the encoder's reported values and the selected source/output dimensions. A source below the selected output resolution is scaled up before encoding, so increasing a bitrate cannot restore detail that was absent from the camera, display or local media input.
+
 The main **Baixar vídeo** action calls `prepareCompatibleDownload` after capture has ended. A self-hosted, optional worker:
 
 1. Copies the H.264 video stream without recompressing or changing the picture.
-2. Decodes audio and produces a single AAC-LC at 48 kHz stereo stream.
+2. Keeps an existing AAC track intact; H.264/Opus fallback recordings are decoded and converted to a single AAC-LC track at 192 kbps, 48 kHz stereo.
 3. Writes ordinary MP4 with its `moov` metadata before `mdat` (faststart), rather than passing the browser's fragmented MP4 directly through.
 4. Releases worker memory after producing the download. Files remain in the browser; no recording is uploaded.
 

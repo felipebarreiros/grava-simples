@@ -32,6 +32,7 @@ export function normalizeSceneAppearance(layout: StudioLayout, input?: Partial<S
       ...(Object.keys(frames).length ? { frames } : {}),
       ...(typeof entry.sourceId === 'string' && entry.sourceId ? { sourceId: entry.sourceId.slice(0, 160) } : {}),
       ...(typeof entry.assetId === 'string' && entry.assetId ? { assetId: entry.assetId.slice(0, 160) } : {}),
+      ...(typeof entry.opacity === 'number' && Number.isFinite(entry.opacity) ? { opacity: finite(entry.opacity, 1, 0, 1) } : {}),
       ...(entry.fit === 'contain' || entry.fit === 'cover' ? { fit: entry.fit } : {}),
       ...(entry.cameraShape === 'rectangle' || entry.cameraShape === 'rounded' || entry.cameraShape === 'circle' ? { cameraShape: entry.cameraShape } : {}),
       ...(typeof entry.cameraBorderColor === 'string' ? { cameraBorderColor: color(entry.cameraBorderColor, '#ffffff') } : {}),
@@ -185,6 +186,9 @@ function draw(context: CanvasRenderingContext2D, source: SceneVisualSource, rect
     context.restore();
   } else context.drawImage(source.element, rect.cropX, rect.cropY, rect.cropWidth, rect.cropHeight, rect.x, rect.y, rect.width, rect.height);
 }
+function layerOpacity(layer: SceneLayer): number {
+  return finite(layer.opacity, 1, 0, 1);
+}
 function imageSize(image: CanvasImageSource): [number, number] {
   if (image instanceof HTMLVideoElement) return [image.videoWidth, image.videoHeight];
   if (image instanceof HTMLImageElement) return [image.naturalWidth, image.naturalHeight];
@@ -236,7 +240,7 @@ export class SceneCompositor {
           if (localBackground) {
             context.fillStyle = layer.color ?? input.appearance.backgroundColor; context.fillRect(box.x, box.y, box.width, box.height);
             const backgroundRect = resolveLayerBounds(layer, { ...input, layerSources: { ...input.layerSources, [layer.sourceId ?? layer.id]: localBackground } }, width, height);
-            draw(context, localBackground, backgroundRect);
+            context.save(); context.globalAlpha *= layerOpacity(layer); draw(context, localBackground, backgroundRect); context.restore();
             if (input.layout === 'countdown') { context.fillStyle = 'rgba(0,0,0,.34)'; context.fillRect(box.x, box.y, box.width, box.height); }
           } else {
             context.translate(box.x, box.y);
@@ -256,8 +260,10 @@ export class SceneCompositor {
         }
         if (layer.kind === 'screen' && source) {
           const frame = this.screenFrame(source, rect, Math.max(width, height), input.frameId);
+          context.save(); context.globalAlpha *= layerOpacity(layer);
           if (input.layout === 'screen-3d' && input.orientation === 'landscape') this.perspective(context, frame.source, frame.rect, width, height);
           else draw(context, frame.source, frame.rect);
+          context.restore();
         }
         const scale = Math.min(width, height) / 1080;
         const style = { fontSize: getLayerFontSize(layer, input.layout) * scale, color: layer.color ?? '#ffffff', align: getLayerTextAlign(layer, input.layout) } as const;

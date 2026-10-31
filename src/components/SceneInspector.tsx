@@ -289,6 +289,11 @@ export function SceneInspector({
   const selectedLayer = appearance.layers.find(
     (layer) => layer.id === selected,
   );
+  const backgroundLayer = appearance.layers.find((layer) => layer.kind === "background");
+  const selectedMediaLayer = selectedLayer &&
+    (selectedLayer.kind === "screen" || selectedLayer.kind === "background") &&
+    (selectedLayer.assetId || (selectedLayer.kind === "background" && appearance.backgroundAssetId))
+    ? selectedLayer : undefined;
   const topFirst = [...appearance.layers].reverse();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -531,6 +536,24 @@ export function SceneInspector({
                   ]}
                 />
               </label>
+            </div>
+          )}
+          {selectedMediaLayer && (
+            <div className="media-opacity-control">
+              <div className="section-heading">
+                <h3>Opacidade da mídia</h3>
+                <output>{Math.round((selectedMediaLayer.opacity ?? 1) * 100)}%</output>
+              </div>
+              <Slider
+                data-testid="layer-opacity"
+                label="Opacidade da mídia"
+                min={0}
+                max={1}
+                step={0.01}
+                value={[selectedMediaLayer.opacity ?? 1]}
+                onValueChange={(values) => editLayer({ opacity: values[0] })}
+              />
+              <div className="range-ends"><span>0%</span><span>100%</span></div>
             </div>
           )}
           {selectedLayer.kind === "title" && (
@@ -920,9 +943,32 @@ export function SceneInspector({
               : "Usar minha imagem"}
           </Button>
           {appearance.backgroundAssetId ? (
-            <Button variant="link" size="sm" onClick={onClearBackground}>
-              Usar fundo do estúdio
-            </Button>
+            <>
+              <Button variant="link" size="sm" onClick={onClearBackground}>
+                Usar fundo do estúdio
+              </Button>
+              {backgroundLayer && !selectedMediaLayer && (
+                <div className="media-opacity-control">
+                  <div className="section-heading">
+                    <h3>Opacidade da mídia</h3>
+                    <output>{Math.round((backgroundLayer.opacity ?? 1) * 100)}%</output>
+                  </div>
+                  <Slider
+                    data-testid="layer-opacity"
+                    label="Opacidade da mídia"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={[backgroundLayer.opacity ?? 1]}
+                    onValueChange={(values) => {
+                      if (onLayerChange) onLayerChange(backgroundLayer.id, { opacity: values[0] });
+                      else patch({ layers: appearance.layers.map((layer) => layer.id === backgroundLayer.id ? { ...layer, opacity: values[0] } : layer) });
+                    }}
+                  />
+                  <div className="range-ends"><span>0%</span><span>100%</span></div>
+                </div>
+              )}
+            </>
           ) : (
             <ToggleGroup
               type="single"

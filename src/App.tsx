@@ -154,6 +154,12 @@ const time = (ms: number) =>
     .toString()
     .padStart(2, "0")}`;
 const bytes = (size: number) => `${(size / 1024 / 1024).toFixed(1)} MB`;
+const bitrate = (value?: number) => {
+  if (!value || !Number.isFinite(value)) return "Automático";
+  return value >= 1_000_000
+    ? `${(value / 1_000_000).toFixed(value % 1_000_000 ? 1 : 0)} Mbps`
+    : `${Math.round(value / 1_000)} kbps`;
+};
 const date = (stamp: number) =>
   new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" }).format(
     stamp,
@@ -1425,15 +1431,25 @@ export default function App() {
     const visual = normalizeSceneAppearance(next.layout, next.appearance);
     setError("");
     const currentConfig = session.current?.getSnapshot().config;
+    const currentCamera = appearance.layers.find(
+      (layer) => layer.visible && layer.kind === "camera",
+    );
+    const nextCamera = visual.layers.find(
+      (layer) => layer.visible && layer.kind === "camera",
+    );
     const usesLegacyCamera = visual.layers.some(layer => layer.visible && layer.kind === "camera" && !layer.sourceId);
+    const cameraSourceChange =
+      !!nextCamera?.sourceId &&
+      (nextCamera.sourceId !== (currentCamera?.sourceId ?? currentConfig?.cameraSourceId));
     const deviceChange =
       !!currentConfig &&
-      ((usesLegacyCamera && (currentConfig.cameraDeviceId ?? "") !== (visual.cameraDeviceId ?? "")) ||
+      ((cameraSourceChange ||
+        (usesLegacyCamera && (currentConfig.cameraDeviceId ?? "") !== (visual.cameraDeviceId ?? ""))) ||
         (currentConfig.microphoneDeviceId ?? "") !==
           (visual.microphoneDeviceId ?? ""));
     if (recording && deviceChange) {
       setError(
-        "Para trocar os dispositivos desta cena, pare a gravação e conecte a câmera e o microfone.",
+        "Para trocar os dispositivos desta cena, pare a gravação. A câmera e o microfone só podem ser conectados antes de iniciar uma nova tomada.",
       );
       return false;
     }
@@ -2974,6 +2990,22 @@ export default function App() {
                     <dt>Renderização</dt>
                     <dd>{(metrics?.measuredFps ?? 0).toFixed(1)} fps</dd>
                   </div>
+                  <div>
+                    <dt>Bitrate de vídeo</dt>
+                    <dd>{bitrate(metrics?.videoBitsPerSecond)}</dd>
+                  </div>
+                  <div>
+                    <dt>Bitrate de áudio</dt>
+                    <dd>{bitrate(metrics?.audioBitsPerSecond)}</dd>
+                  </div>
+                  {metrics?.captureInfo && (
+                    <div>
+                      <dt>Fonte / saída</dt>
+                      <dd>
+                        {metrics.captureInfo.sourceWidth}×{metrics.captureInfo.sourceHeight} → {settings.resolution === "4k" ? "3840×2160" : settings.resolution === "1080" ? "1920×1080" : settings.resolution === "720" ? "1280×720" : "640×360"}
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Armazenamento</dt>
                     <dd>{metrics?.storage?.storage ?? "Local"}</dd>
