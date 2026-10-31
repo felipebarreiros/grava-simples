@@ -94,6 +94,7 @@ test('legacy browser recordings require an explicit import and another account r
   const requests: string[] = [];
   await page.route('**/api/recordings*', route => { requests.push(route.request().method()); return route.fulfill({ json: { configured: true, recordings: [], nextCursor: null, usedBytes: 0, maxStorageBytes: 10 * 1024 ** 3 } }); });
   await page.goto('/app');
+  await page.getByRole('button', { name: /^Armazenamento:/ }).click();
   await expect(page.getByRole('button', { name: 'Importar minhas gravações deste navegador' })).toBeVisible();
   expect(await page.evaluate(async () => (await import('/src/projects/store.ts')).listProjectTakes().length)).toBe(0);
   await page.getByRole('button', { name: 'Importar minhas gravações deste navegador' }).click();

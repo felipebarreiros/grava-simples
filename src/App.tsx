@@ -2081,6 +2081,7 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <CloudRecordingStorage model={cloudLibrary} />
           <Tooltip
             content={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -2203,7 +2204,6 @@ export default function App() {
               )}
             </div>
           )}
-          {(page === "projects" || (page === "studio" && tab === "recordings")) && <CloudRecordingStorage model={cloudLibrary} />}
           {page === "recording" && (activeTake && result ? (
             <RecordingDetail
               key={activeTake.id}
