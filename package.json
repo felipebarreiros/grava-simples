@@ -18,6 +18,7 @@
     "test:transcription": "node --test --test-concurrency=1 tests/transcription*.test.mjs tests/transcript.test.mjs tests/cloud-transcription.test.mjs",
     "build:companion": "node scripts/build-companion.mjs",
     "build:macos-dmg": "node scripts/build-macos-dmg.mjs",
+    "build:airplay-runtime": "node scripts/build-airplay-runtime.mjs",
     "test:companion": "go -C companion test -race ./..."
   },
   "dependencies": {
